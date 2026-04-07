@@ -1,0 +1,9 @@
+langchain
+langchain_core
+langchain_classic
+langchain-community
+rank-bm25
+scikit-learn
+ipykernel
+requests
+python-dotenv
