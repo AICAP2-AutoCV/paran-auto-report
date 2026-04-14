@@ -2,8 +2,13 @@ langchain
 langchain_core
 langchain_classic
 langchain-community
+langchain-text-splitters
+langchain-qdrant
 rank-bm25
 scikit-learn
 ipykernel
 requests
 python-dotenv
+notion-client
+openai
+qdrant-client
