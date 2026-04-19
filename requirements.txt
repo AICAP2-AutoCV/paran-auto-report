@@ -1,14 +1,27 @@
+# Vector DB
+qdrant-client
+langchain-qdrant
+
+# LangChain
 langchain
-langchain_core
-langchain_classic
+langchain-core
 langchain-community
 langchain-text-splitters
-langchain-qdrant
+langchain-openai
+
+# Embeddings / LLM
+openai
+
+# Notion
+notion-client
+
+# Observability
+langfuse
+
+# Utilities
+python-dotenv
 rank-bm25
 scikit-learn
+
+# Dev
 ipykernel
-requests
-python-dotenv
-notion-client
-openai
-qdrant-client
