@@ -1,0 +1,49 @@
+# 기계공학과 보고서 템플릿
+department:
+  id: "mechanical_engineering"
+  name: "기계공학과"
+  name_en: "Mechanical Engineering"
+  description: "설계, 제작, 실험 검증 중심의 공학 보고서"
+
+tone:
+  style: "formal_engineering"
+  formality: "high"
+  description: "공학 표준 표기법을 준수하고 단위계(SI)를 명확히 사용합니다. 실험 조건과 측정 오차를 반드시 명시합니다."
+
+sections:
+  - id: "design_objectives"
+    title: "설계 목표 및 요구사항"
+    required: true
+    description: "설계 사양(spec), 하중 조건, 안전 계수, 규격(KS, ISO) 등 설계 요구사항을 명시합니다."
+  - id: "theoretical_background"
+    title: "이론적 배경 및 설계 원리"
+    required: true
+    description: "적용된 역학 이론(재료역학, 유체역학, 열역학), 설계 수식, 가정 조건을 기술합니다."
+  - id: "fabrication_and_experiment"
+    title: "제작 및 실험"
+    required: true
+    description: "사용 재료, 가공 방법, 실험 장치 구성, 측정 방법 및 조건을 상세히 기술합니다."
+  - id: "results_and_analysis"
+    title: "결과 분석 및 고찰"
+    required: true
+    description: "측정 데이터(단위 포함), 이론값과 실험값 비교, 오차 원인 분석을 포함합니다."
+  - id: "conclusion_and_improvement"
+    title: "결론 및 개선 방향"
+    required: true
+    description: "설계 목표 달성 여부, 문제점, 향후 개선 방안을 제시합니다."
+
+emphasis:
+  - "모든 수치에 SI 단위 명시 (N, Pa, m/s, °C 등)"
+  - "측정 불확도(uncertainty) 및 오차율 기재"
+  - "이론값과 실험값 비교 테이블 포함"
+  - "안전 계수(safety factor) 계산 결과 명시"
+  - "사용 재료 규격(강종, 열처리 조건 등) 구체적 기재"
+  - "CAD 도면 또는 실험 장치 사진 첨부 여부 언급"
+
+format:
+  use_tables: true
+  use_code_blocks: false
+  use_bullet_points: true
+  preferred_heading_level: 3
+  date_format: "YYYY년 MM월 DD일"
+  number_format: "유효숫자 4자리"

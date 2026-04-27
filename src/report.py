@@ -4,6 +4,7 @@ LangChain RAG 보고서 생성기 (Langfuse 트레이싱 포함)
 
 import uuid
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Optional, List
 from langchain_openai import ChatOpenAI
 from langchain_core.documents import Document
@@ -19,6 +20,7 @@ from .config import (
     LANGFUSE_SECRET_KEY, LANGFUSE_PUBLIC_KEY, LANGFUSE_HOST,
 )
 from .vectordb import load_vectorstore
+from .department_loader import load_department_template, build_full_department_context
 
 # Langfuse 클라이언트 초기화 (secret_key/public_key/host를 명시적으로 설정)
 _langfuse = Langfuse(
@@ -174,6 +176,121 @@ def _build_date_range_info(since: Optional[datetime], until: Optional[datetime])
         until_str = until.strftime("%Y-%m-%d") if until else "현재"
         return f"기간: {since_str} ~ {until_str}\n"
     return ""
+
+
+# ── 학과 맞춤 보고서 재생성 ────────────────────────────────────────────────
+
+PROMPTS_DIR = Path(__file__).parent.parent / "prompts" / "department_report"
+
+
+def _load_prompt(filename: str) -> str:
+    path = PROMPTS_DIR / filename
+    with open(path, "r", encoding="utf-8") as f:
+        return f.read()
+
+
+def regenerate_for_department(
+    original_report: str,
+    department_id: str,
+    report_date: Optional[str] = None,
+    session_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+) -> str:
+    """기존 보고서를 학과 맞춤으로 재생성합니다.
+
+    RAG 재검색 없이 LLM만으로 원본 보고서 내용을 학과 특성에 맞게 재구성합니다.
+
+    Args:
+        original_report: 원본 보고서 (마크다운 텍스트)
+        department_id:   학과 ID (config/department_templates/ 하위 YAML 파일명)
+        report_date:     보고서 날짜 문자열 (미지정 시 오늘 날짜 사용)
+        session_id:      Langfuse 세션 ID
+        user_id:         Langfuse 사용자 ID
+
+    Returns:
+        재생성된 보고서 (마크다운 텍스트)
+
+    Raises:
+        FileNotFoundError: 해당 department_id의 템플릿이 없을 때
+    """
+    template = load_department_template(department_id)
+    dept_info = template.get("department", {})
+    department_name = dept_info.get("name", department_id)
+    report_date = report_date or datetime.now().strftime("%Y-%m-%d")
+
+    department_context = build_full_department_context(department_id)
+    if not department_context:
+        raise ValueError(f"학과 컨텍스트 생성 실패: {department_id}")
+
+    system_prompt = _load_prompt("system_prompt.txt")
+    regen_template = _load_prompt("regeneration_prompt.txt")
+
+    user_prompt = (
+        regen_template
+        .replace("{department_name}", department_name)
+        .replace("{department_context}", department_context)
+        .replace("{original_report}", original_report)
+        .replace("{report_date}", report_date)
+    )
+
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", system_prompt),
+        ("human", "{user_prompt}"),
+    ])
+
+    handler = get_langfuse_handler(session_id=session_id, user_id=user_id)
+    chain = prompt | _make_llm() | StrOutputParser()
+
+    print(f"✏️  '{department_name}' 맞춤 보고서 재생성 중...")
+    result = chain.invoke(
+        {"user_prompt": user_prompt},
+        config={"callbacks": [handler]},
+    )
+    _langfuse.flush()
+    print("✅ 재생성 완료")
+    return result
+
+
+def regenerate_for_department_stream(
+    original_report: str,
+    department_id: str,
+    report_date: Optional[str] = None,
+    session_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+):
+    """학과 맞춤 보고서 재생성 스트리밍 버전 - 토큰 단위로 yield"""
+    template = load_department_template(department_id)
+    dept_info = template.get("department", {})
+    department_name = dept_info.get("name", department_id)
+    report_date = report_date or datetime.now().strftime("%Y-%m-%d")
+
+    department_context = build_full_department_context(department_id)
+    system_prompt = _load_prompt("system_prompt.txt")
+    regen_template = _load_prompt("regeneration_prompt.txt")
+
+    user_prompt = (
+        regen_template
+        .replace("{department_name}", department_name)
+        .replace("{department_context}", department_context)
+        .replace("{original_report}", original_report)
+        .replace("{report_date}", report_date)
+    )
+
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", system_prompt),
+        ("human", "{user_prompt}"),
+    ])
+
+    handler = get_langfuse_handler(session_id=session_id, user_id=user_id)
+    chain = prompt | _make_llm() | StrOutputParser()
+
+    print(f"✏️  '{department_name}' 맞춤 보고서 재생성 중 (스트리밍)...")
+    for chunk in chain.stream(
+        {"user_prompt": user_prompt},
+        config={"callbacks": [handler]},
+    ):
+        yield chunk
+    _langfuse.flush()
 
 
 # ── 편의 함수 ──────────────────────────────────────────────────────────────
