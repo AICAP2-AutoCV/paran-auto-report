@@ -29,5 +29,9 @@ scikit-learn
 python-docx
 pypandoc
 
+# API
+fastapi
+uvicorn[standard]
+
 # Dev
 ipykernel
