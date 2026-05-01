@@ -1,28 +1,27 @@
-"""
-LangChain RAG 보고서 생성기 (Langfuse 트레이싱 포함)
-"""
+"""LangChain RAG 보고서 생성기 (Langfuse 트레이싱 포함)"""
 
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional, List
+
 from langchain_openai import ChatOpenAI
 from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.runnables import RunnablePassthrough, RunnableLambda
-from langfuse import Langfuse, get_client
+from langfuse import Langfuse
 from langfuse.langchain import CallbackHandler as LangfuseCallbackHandler
 from langfuse.types import TraceContext
+from qdrant_client.models import DatetimeRange, Filter, FieldCondition
 
-from .config import (
+from ..config import (
     OPENAI_API_KEY, OPENAI_BASE_URL, LLM_MODEL,
     LANGFUSE_SECRET_KEY, LANGFUSE_PUBLIC_KEY, LANGFUSE_HOST,
 )
-from .vectordb import load_vectorstore
-from .department_loader import load_department_template, build_full_department_context
+from ..ingestion import load_vectorstore
+from .department import load_department_template, build_full_department_context
 
-# Langfuse 클라이언트 초기화 (secret_key/public_key/host를 명시적으로 설정)
+
 _langfuse = Langfuse(
     secret_key=LANGFUSE_SECRET_KEY,
     public_key=LANGFUSE_PUBLIC_KEY,
@@ -30,18 +29,52 @@ _langfuse = Langfuse(
 )
 
 REPORT_PROMPT = ChatPromptTemplate.from_messages([
-    ("system", """당신은 팀의 활동 내용을 분석하고 구조화된 보고서를 작성하는 전문 어시스턴트입니다.
+    ("system", """당신은 주차별 활동 보고서를 작성하는 전문 어시스턴트입니다.
 
-제공된 컨텍스트를 바탕으로 다음 형식에 맞게 보고서를 작성하세요:
+제공된 컨텍스트를 바탕으로 학교 제출용 보고서처럼 명확한 형식으로 작성하세요. 문체는 간결한 보고서체를 사용합니다.
 
-1. **요약** - 핵심 내용을 2~3문장으로 요약
-2. **주요 활동** - 기간 내 주요 업무/이벤트 목록
-3. **성과 및 완료 사항** - 완료된 작업, 달성한 목표
-4. **진행 중인 사항** - 현재 진행 중인 작업
-5. **이슈 및 리스크** - 발견된 문제점이나 주의 사항 (없으면 생략)
-6. **다음 단계** - 향후 계획이나 액션 아이템
+반드시 다음 구조를 따르세요:
 
-컨텍스트에 없는 내용은 추측하지 마세요. 정보가 부족하면 해당 항목에 '관련 정보 없음'으로 표기하세요."""),
+[TITLE]주차별 활동 보고서[/TITLE]
+
+## 기본 정보
+| 항목 | 내용 |
+|---|---|
+| 제출일자 | 확인 필요 |
+| 팀명 | 확인 필요 |
+| 학과 | 확인 필요 |
+| 학번 | 확인 필요 |
+| 성명 | 확인 필요 |
+| 도전과제명 | 사용자가 요청한 주제 |
+| 보고 기간 | 확인된 경우만 작성 |
+
+## 주차 활동내용
+
+## 1. 주요활동
+
+### 가. 최초 계획
+| 구분 | 계획 내용 |
+|---|---|
+| 팀 | 원래 계획된 팀 활동 |
+| 개인 | 원래 계획된 개인 활동 |
+
+### 나. 실제 활동내용 및 목표달성 여부
+| 구분 | 투입시간 | 실제 활동내용 | 목표달성 여부 |
+|---|---:|---|---|
+| 팀 | 확인된 경우만 작성 | 실제 수행한 팀 활동 | 달성/부분 달성/미달성 |
+| 개인 | 확인된 경우만 작성 | 실제 수행한 개인 활동 | 달성/부분 달성/미달성 |
+
+## 2. 세부내용
+원문 근거가 있는 활동을 중심으로 소제목을 나누어 구체적으로 작성합니다. 단순 요약이 아니라 무엇을 했고, 왜 했고, 어떤 의미가 있는지 보고서 문장으로 설명합니다.
+
+## 3. 배운점
+활동을 통해 얻은 인사이트, 협업상 배운 점, 다음 활동에 반영할 점을 작성합니다.
+
+작성 규칙:
+- 컨텍스트에 없는 사실, 수치, 성과, 실험 결과, 기관명은 만들지 마세요.
+- 정보가 부족한 칸은 억지로 채우지 말고 "확인 필요"라고 쓰세요.
+- 표는 위 형식을 유지하되, 내용이 많으면 줄바꿈 대신 문장형 요약으로 작성하세요.
+- 제목 태그 [TITLE]...[/TITLE]는 반드시 첫 줄에 한 번만 작성하세요."""),
     ("human", """{date_range_info}주제: {topic}
 
 [참고 문서]
@@ -50,31 +83,25 @@ REPORT_PROMPT = ChatPromptTemplate.from_messages([
 위 내용을 바탕으로 보고서를 작성해주세요."""),
 ])
 
-
-def _parse_notion_dt(dt_str: str) -> Optional[datetime]:
-    if not dt_str:
-        return None
-    try:
-        return datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
-    except Exception:
-        return None
+PROMPTS_DIR = Path(__file__).parent.parent.parent / "prompts" / "department_report"
 
 
-def _filter_by_date(docs: List[Document], since: Optional[datetime], until: Optional[datetime]) -> List[Document]:
+def _build_qdrant_filter(since: Optional[datetime], until: Optional[datetime]) -> Optional[Filter]:
+    """since/until → Qdrant 메타데이터 필터 (없으면 None)"""
     if not since and not until:
-        return docs
-    filtered = []
-    for doc in docs:
-        edited = _parse_notion_dt(doc.metadata.get("last_edited_time", ""))
-        if edited is None:
-            filtered.append(doc)
-            continue
-        if since and edited < since:
-            continue
-        if until and edited > until:
-            continue
-        filtered.append(doc)
-    return filtered
+        return None
+    conditions = []
+    if since:
+        conditions.append(FieldCondition(
+            key="last_edited_time",
+            range=DatetimeRange(gte=since),
+        ))
+    if until:
+        conditions.append(FieldCondition(
+            key="last_edited_time",
+            range=DatetimeRange(lte=until),
+        ))
+    return Filter(must=conditions)
 
 
 def _format_docs(docs: List[Document]) -> str:
@@ -90,8 +117,20 @@ def _format_docs(docs: List[Document]) -> str:
     return "\n\n---\n\n".join(parts)
 
 
-def get_langfuse_handler(session_id: Optional[str] = None, user_id: Optional[str] = None) -> LangfuseCallbackHandler:
-    trace_ctx: TraceContext = {"trace_id": uuid.uuid4().hex}
+def _build_date_range_info(since: Optional[datetime], until: Optional[datetime]) -> str:
+    if since or until:
+        since_str = since.strftime("%Y-%m-%d") if since else "처음"
+        until_str = until.strftime("%Y-%m-%d") if until else "현재"
+        return f"기간: {since_str} ~ {until_str}\n"
+    return ""
+
+
+def get_langfuse_handler(
+    session_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+    trace_id: Optional[str] = None,
+) -> LangfuseCallbackHandler:
+    trace_ctx: TraceContext = {"trace_id": trace_id or uuid.uuid4().hex}
     if user_id:
         trace_ctx["user_id"] = user_id  # type: ignore[typeddict-unknown-key]
     if session_id:
@@ -100,7 +139,13 @@ def get_langfuse_handler(session_id: Optional[str] = None, user_id: Optional[str
 
 
 def _make_llm():
-    return ChatOpenAI(model=LLM_MODEL, api_key=OPENAI_API_KEY, base_url=OPENAI_BASE_URL)
+    return ChatOpenAI(model=LLM_MODEL, api_key=OPENAI_API_KEY, base_url=OPENAI_BASE_URL, temperature=0)
+
+
+def _load_prompt(filename: str) -> str:
+    path = PROMPTS_DIR / filename
+    with open(path, "r", encoding="utf-8") as f:
+        return f.read()
 
 
 def generate_report(
@@ -110,23 +155,15 @@ def generate_report(
     until: Optional[datetime] = None,
     session_id: Optional[str] = None,
     user_id: Optional[str] = None,
+    trace_id: Optional[str] = None,
 ) -> str:
-    """
-    Args:
-        topic:      보고서 주제
-        k:          검색할 문서 수 (날짜 필터 후 줄어들 수 있으므로 넉넉하게)
-        since:      이 시각 이후 수정된 문서만 포함 (timezone-aware datetime)
-        until:      이 시각 이전 수정된 문서만 포함
-        session_id: Langfuse 세션 ID
-        user_id:    Langfuse 사용자 ID
-    """
     vs = load_vectorstore()
-    handler = get_langfuse_handler(session_id=session_id, user_id=user_id)
+    handler = get_langfuse_handler(session_id=session_id, user_id=user_id, trace_id=trace_id)
 
+    qdrant_filter = _build_qdrant_filter(since, until)
     print(f"🔍 '{topic}' 관련 문서 검색 중 (k={k})...")
-    raw_docs = vs.similarity_search(topic, k=k)
-    docs = _filter_by_date(raw_docs, since, until)
-    print(f"   필터 결과: {len(raw_docs)}개 → {len(docs)}개 문서 사용")
+    docs = vs.similarity_search(topic, k=k, filter=qdrant_filter)
+    print(f"   검색 결과: {len(docs)}개 문서 사용")
 
     date_range_info = _build_date_range_info(since, until)
     context = _format_docs(docs)
@@ -148,15 +185,16 @@ def generate_report_stream(
     until: Optional[datetime] = None,
     session_id: Optional[str] = None,
     user_id: Optional[str] = None,
+    trace_id: Optional[str] = None,
 ):
     """스트리밍 버전 - 토큰 단위로 yield"""
     vs = load_vectorstore()
-    handler = get_langfuse_handler(session_id=session_id, user_id=user_id)
+    handler = get_langfuse_handler(session_id=session_id, user_id=user_id, trace_id=trace_id)
 
+    qdrant_filter = _build_qdrant_filter(since, until)
     print(f"🔍 '{topic}' 관련 문서 검색 중 (k={k})...")
-    raw_docs = vs.similarity_search(topic, k=k)
-    docs = _filter_by_date(raw_docs, since, until)
-    print(f"   필터 결과: {len(raw_docs)}개 → {len(docs)}개 문서 사용")
+    docs = vs.similarity_search(topic, k=k, filter=qdrant_filter)
+    print(f"   검색 결과: {len(docs)}개 문서 사용")
 
     date_range_info = _build_date_range_info(since, until)
     context = _format_docs(docs)
@@ -170,49 +208,14 @@ def generate_report_stream(
     _langfuse.flush()
 
 
-def _build_date_range_info(since: Optional[datetime], until: Optional[datetime]) -> str:
-    if since or until:
-        since_str = since.strftime("%Y-%m-%d") if since else "처음"
-        until_str = until.strftime("%Y-%m-%d") if until else "현재"
-        return f"기간: {since_str} ~ {until_str}\n"
-    return ""
-
-
-# ── 학과 맞춤 보고서 재생성 ────────────────────────────────────────────────
-
-PROMPTS_DIR = Path(__file__).parent.parent / "prompts" / "department_report"
-
-
-def _load_prompt(filename: str) -> str:
-    path = PROMPTS_DIR / filename
-    with open(path, "r", encoding="utf-8") as f:
-        return f.read()
-
-
 def regenerate_for_department(
     original_report: str,
     department_id: str,
     report_date: Optional[str] = None,
     session_id: Optional[str] = None,
     user_id: Optional[str] = None,
+    trace_id: Optional[str] = None,
 ) -> str:
-    """기존 보고서를 학과 맞춤으로 재생성합니다.
-
-    RAG 재검색 없이 LLM만으로 원본 보고서 내용을 학과 특성에 맞게 재구성합니다.
-
-    Args:
-        original_report: 원본 보고서 (마크다운 텍스트)
-        department_id:   학과 ID (config/department_templates/ 하위 YAML 파일명)
-        report_date:     보고서 날짜 문자열 (미지정 시 오늘 날짜 사용)
-        session_id:      Langfuse 세션 ID
-        user_id:         Langfuse 사용자 ID
-
-    Returns:
-        재생성된 보고서 (마크다운 텍스트)
-
-    Raises:
-        FileNotFoundError: 해당 department_id의 템플릿이 없을 때
-    """
     template = load_department_template(department_id)
     dept_info = template.get("department", {})
     department_name = dept_info.get("name", department_id)
@@ -238,7 +241,7 @@ def regenerate_for_department(
         ("human", "{user_prompt}"),
     ])
 
-    handler = get_langfuse_handler(session_id=session_id, user_id=user_id)
+    handler = get_langfuse_handler(session_id=session_id, user_id=user_id, trace_id=trace_id)
     chain = prompt | _make_llm() | StrOutputParser()
 
     print(f"✏️  '{department_name}' 맞춤 보고서 재생성 중...")
@@ -257,6 +260,7 @@ def regenerate_for_department_stream(
     report_date: Optional[str] = None,
     session_id: Optional[str] = None,
     user_id: Optional[str] = None,
+    trace_id: Optional[str] = None,
 ):
     """학과 맞춤 보고서 재생성 스트리밍 버전 - 토큰 단위로 yield"""
     template = load_department_template(department_id)
@@ -281,7 +285,7 @@ def regenerate_for_department_stream(
         ("human", "{user_prompt}"),
     ])
 
-    handler = get_langfuse_handler(session_id=session_id, user_id=user_id)
+    handler = get_langfuse_handler(session_id=session_id, user_id=user_id, trace_id=trace_id)
     chain = prompt | _make_llm() | StrOutputParser()
 
     print(f"✏️  '{department_name}' 맞춤 보고서 재생성 중 (스트리밍)...")
@@ -292,8 +296,6 @@ def regenerate_for_department_stream(
         yield chunk
     _langfuse.flush()
 
-
-# ── 편의 함수 ──────────────────────────────────────────────────────────────
 
 def last_n_days(n: int) -> datetime:
     """n일 전 UTC datetime 반환"""

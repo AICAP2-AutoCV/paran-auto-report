@@ -1,0 +1,47 @@
+department:
+  id: biological_science
+  name: 생명과학과
+  name_en: Biological Science
+  college: 자연과학대학
+  description: 유전공학, 세포학 등 생명 현상의 메커니즘 분석 및 응용
+purpose: 원본 보고서의 사실은 유지하면서 해당 학과 학생이 이해하기 쉬운 관점, 용어, 비유로 재작성합니다.
+tone:
+  style: department_aware_explanation
+  formality: high
+  description: 생명과학과 학생에게 익숙한 개념과 표현을 사용하되, 원문에 없는 실제 성과나 수치는 만들지 않습니다.
+translation_guides:
+- 원문 내용을 구성 요소, 기능, 상호작용, 적응 과정으로 설명합니다.
+- 조직이나 시스템은 세포와 기관이 협력하는 생명 시스템에 비유합니다.
+- 성과는 기능 유지, 조절, 적응 관점으로 풀어냅니다.
+terminology:
+- 세포
+- 유전자
+- 기능
+- 조절
+- 상호작용
+- 적응
+analogy_examples:
+- 팀의 역할 분담은 세포들이 각자 기능을 수행해 생명체를 유지하는 과정처럼 설명할 수 있습니다.
+sections:
+- id: original_summary
+  title: 원문 핵심 내용
+  required: true
+  description: 원본 보고서의 핵심 사실과 흐름을 보존해 요약합니다.
+- id: department_view
+  title: 생명과학과 관점의 이해
+  required: true
+  description: 원문 내용을 해당 학과의 용어, 관점, 비유로 풀어 설명합니다.
+- id: implications
+  title: 의미와 활용 가능성
+  required: false
+  description: 원문에 근거해 해당 학과 학생이 얻을 수 있는 시사점과 활용 가능성을 정리합니다.
+avoid:
+- 원문에 없는 실제 수치, 실험 결과, 성과, 일정, 기관명 생성
+- 설명용 비유를 실제 수행 결과처럼 표현
+- 학과 전문용어만 나열하고 원문과 연결하지 않는 서술
+format:
+  use_tables: false
+  use_code_blocks: false
+  use_bullet_points: true
+  preferred_heading_level: 3
+  date_format: YYYY-MM-DD

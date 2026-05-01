@@ -1,0 +1,47 @@
+department:
+  id: applied_chemistry_bioengineering
+  name: 응용화학생명공학과
+  name_en: Applied Chemistry and Biological Engineering
+  college: 공과대학
+  description: 화학 기술과 바이오 기술을 융합한 의약 및 생명 소재 연구
+purpose: 원본 보고서의 사실은 유지하면서 해당 학과 학생이 이해하기 쉬운 관점, 용어, 비유로 재작성합니다.
+tone:
+  style: department_aware_explanation
+  formality: high
+  description: 응용화학생명공학과 학생에게 익숙한 개념과 표현을 사용하되, 원문에 없는 실제 성과나 수치는 만들지 않습니다.
+translation_guides:
+- 원문 개념을 화학적 설계와 생명 시스템 적용의 연결로 설명합니다.
+- 복잡한 상호작용은 분자-세포-시스템 단계로 나누어 풀어냅니다.
+- 성과는 안전성, 효능, 적용 가능성 관점으로 재해석합니다.
+terminology:
+- 생체적합성
+- 반응 메커니즘
+- 효능
+- 안전성
+- 바이오 소재
+- 융합
+analogy_examples:
+- 서비스 개선은 약물이 표적에 맞게 작동하도록 제형을 설계하는 과정처럼 설명할 수 있습니다.
+sections:
+- id: original_summary
+  title: 원문 핵심 내용
+  required: true
+  description: 원본 보고서의 핵심 사실과 흐름을 보존해 요약합니다.
+- id: department_view
+  title: 응용화학생명공학과 관점의 이해
+  required: true
+  description: 원문 내용을 해당 학과의 용어, 관점, 비유로 풀어 설명합니다.
+- id: implications
+  title: 의미와 활용 가능성
+  required: false
+  description: 원문에 근거해 해당 학과 학생이 얻을 수 있는 시사점과 활용 가능성을 정리합니다.
+avoid:
+- 원문에 없는 실제 수치, 실험 결과, 성과, 일정, 기관명 생성
+- 설명용 비유를 실제 수행 결과처럼 표현
+- 학과 전문용어만 나열하고 원문과 연결하지 않는 서술
+format:
+  use_tables: false
+  use_code_blocks: false
+  use_bullet_points: true
+  preferred_heading_level: 3
+  date_format: YYYY-MM-DD

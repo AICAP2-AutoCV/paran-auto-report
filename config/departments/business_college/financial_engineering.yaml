@@ -1,0 +1,47 @@
+department:
+  id: financial_engineering
+  name: 금융공학과
+  name_en: Financial Engineering
+  college: 경영대학
+  description: 수학 및 통계학을 금융 시장 분석과 파생상품 설계에 도입
+purpose: 원본 보고서의 사실은 유지하면서 해당 학과 학생이 이해하기 쉬운 관점, 용어, 비유로 재작성합니다.
+tone:
+  style: department_aware_explanation
+  formality: high
+  description: 금융공학과 학생에게 익숙한 개념과 표현을 사용하되, 원문에 없는 실제 성과나 수치는 만들지 않습니다.
+translation_guides:
+- 원문 내용을 리스크, 수익, 변동성, 의사결정 모델 관점으로 설명합니다.
+- 불확실성 관리는 포트폴리오 위험 관리에 비유합니다.
+- 성과는 기대 효과와 리스크 균형 관점으로 풀어냅니다.
+terminology:
+- 리스크
+- 수익률
+- 변동성
+- 모델
+- 헤지
+- 포트폴리오
+analogy_examples:
+- 여러 선택지의 균형은 수익과 위험을 동시에 고려하는 포트폴리오 구성처럼 설명할 수 있습니다.
+sections:
+- id: original_summary
+  title: 원문 핵심 내용
+  required: true
+  description: 원본 보고서의 핵심 사실과 흐름을 보존해 요약합니다.
+- id: department_view
+  title: 금융공학과 관점의 이해
+  required: true
+  description: 원문 내용을 해당 학과의 용어, 관점, 비유로 풀어 설명합니다.
+- id: implications
+  title: 의미와 활용 가능성
+  required: false
+  description: 원문에 근거해 해당 학과 학생이 얻을 수 있는 시사점과 활용 가능성을 정리합니다.
+avoid:
+- 원문에 없는 실제 수치, 실험 결과, 성과, 일정, 기관명 생성
+- 설명용 비유를 실제 수행 결과처럼 표현
+- 학과 전문용어만 나열하고 원문과 연결하지 않는 서술
+format:
+  use_tables: false
+  use_code_blocks: false
+  use_bullet_points: true
+  preferred_heading_level: 3
+  date_format: YYYY-MM-DD

@@ -3,16 +3,19 @@
 import json
 import os
 import tempfile
+import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 
-from .department_loader import list_departments
-from .document_generator import DocumentGenerator
+from .report.department import list_departments
+from .document import DocumentGenerator
+from .langfuse_feedback import save_feedback
 from .report import (
     generate_report_stream,
     last_n_days,
@@ -21,6 +24,13 @@ from .report import (
 )
 
 app = FastAPI(title="Paran Auto Report API", version="1.0.0")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["X-Trace-ID"],
+)
 
 
 # ── 요청 모델 ────────────────────────────────────────────────────────────────
@@ -49,6 +59,19 @@ class ExportRequest(BaseModel):
     format: str = "docx"              # "docx" | "pdf"
     title: str = "보고서"
     author: str = "Unknown"
+
+
+class FeedbackRequest(BaseModel):
+    trace_id: str
+    score: int = Field(..., ge=0, le=10)
+    comment: Optional[str] = None
+    feedback_type: str = "user_satisfaction"
+
+
+class FeedbackResponse(BaseModel):
+    code: int = 1
+    message: str = "피드백이 저장되었습니다."
+    success: bool = True
 
 
 # ── 내부 헬퍼 ────────────────────────────────────────────────────────────────
@@ -105,6 +128,7 @@ def generate_report_endpoint(req: GenerateRequest):
     since = _parse_since(req)
     until = _parse_until(req.until)
     session_id = req.session_id or f"api-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    trace_id = uuid.uuid4().hex
 
     generator = generate_report_stream(
         topic=req.topic,
@@ -113,8 +137,10 @@ def generate_report_endpoint(req: GenerateRequest):
         until=until,
         session_id=session_id,
         user_id=req.user_id,
+        trace_id=trace_id,
     )
-    return StreamingResponse(_sse(generator), media_type="text/event-stream", headers=_SSE_HEADERS)
+    headers = {**_SSE_HEADERS, "X-Trace-ID": trace_id}
+    return StreamingResponse(_sse(generator), media_type="text/event-stream", headers=headers)
 
 
 @app.post("/report/regenerate")
@@ -127,6 +153,7 @@ def regenerate_report_endpoint(req: RegenerateRequest):
       data: [DONE]
     """
     session_id = req.session_id or f"api-regen-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    trace_id = uuid.uuid4().hex
 
     try:
         generator = regenerate_for_department_stream(
@@ -135,11 +162,13 @@ def regenerate_report_endpoint(req: RegenerateRequest):
             report_date=req.report_date,
             session_id=session_id,
             user_id=req.user_id,
+            trace_id=trace_id,
         )
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
-    return StreamingResponse(_sse(generator), media_type="text/event-stream", headers=_SSE_HEADERS)
+    headers = {**_SSE_HEADERS, "X-Trace-ID": trace_id}
+    return StreamingResponse(_sse(generator), media_type="text/event-stream", headers=headers)
 
 
 @app.post("/document/export")
@@ -185,3 +214,22 @@ def export_document(req: ExportRequest):
         filename=filename,
         background=BackgroundTask(os.unlink, tmp_path),
     )
+
+
+@app.post("/feedback", response_model=FeedbackResponse)
+def submit_feedback(req: FeedbackRequest):
+    """생성된 보고서에 대한 사용자 피드백을 Langfuse score로 저장."""
+    try:
+        success = save_feedback(
+            trace_id=req.trace_id,
+            score=req.score,
+            comment=req.comment,
+            feedback_type=req.feedback_type,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if not success:
+        raise HTTPException(status_code=500, detail="피드백 저장에 실패했습니다.")
+
+    return FeedbackResponse()

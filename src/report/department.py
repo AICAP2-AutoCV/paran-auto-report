@@ -1,8 +1,5 @@
-"""학과별 보고서 템플릿 로더
+"""학과별 보고서 템플릿 로더"""
 
-YAML 형태로 정의된 학과 템플릿을 불러와
-RAG 프롬프트에 동적으로 반영할 수 있도록 처리합니다.
-"""
 from __future__ import annotations
 
 import yaml
@@ -10,7 +7,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional
 
 
-TEMPLATES_DIR = Path(__file__).parent.parent / "config" / "department_templates"
+TEMPLATES_DIR = Path(__file__).parent.parent.parent / "config" / "departments"
 
 
 def _load_yaml(path: Path) -> Dict[str, Any]:
@@ -19,13 +16,8 @@ def _load_yaml(path: Path) -> Dict[str, Any]:
 
 
 def list_departments() -> List[Dict[str, str]]:
-    """사용 가능한 학과 목록 반환.
-
-    Returns:
-        [{"id": ..., "name": ..., "name_en": ..., "description": ...}, ...]
-    """
     departments = []
-    for yaml_file in sorted(TEMPLATES_DIR.glob("*.yaml")):
+    for yaml_file in sorted(TEMPLATES_DIR.rglob("*.yaml")):
         try:
             data = _load_yaml(yaml_file)
             dept = data.get("department", {})
@@ -34,6 +26,7 @@ def list_departments() -> List[Dict[str, str]]:
                 "name": dept.get("name", ""),
                 "name_en": dept.get("name_en", ""),
                 "description": dept.get("description", ""),
+                "college": dept.get("college", yaml_file.parent.name),
             })
         except Exception:
             continue
@@ -41,21 +34,13 @@ def list_departments() -> List[Dict[str, str]]:
 
 
 def load_department_template(department_id: str) -> Dict[str, Any]:
-    """학과 ID로 템플릿을 로드합니다.
-
-    Args:
-        department_id: YAML 파일명(확장자 제외) 또는 department.id 값
-
-    Raises:
-        FileNotFoundError: 해당 학과 템플릿이 없을 때
-    """
     yaml_path = TEMPLATES_DIR / f"{department_id}.yaml"
     if not yaml_path.exists():
-        for f in TEMPLATES_DIR.glob("*.yaml"):
+        for f in TEMPLATES_DIR.rglob("*.yaml"):
             data = _load_yaml(f)
             if data.get("department", {}).get("id") == department_id:
                 return data
-        available = [f.stem for f in TEMPLATES_DIR.glob("*.yaml")]
+        available = [f.stem for f in TEMPLATES_DIR.rglob("*.yaml")]
         raise FileNotFoundError(
             f"학과 템플릿 '{department_id}'를 찾을 수 없습니다. "
             f"사용 가능한 템플릿: {available}"
@@ -64,33 +49,49 @@ def load_department_template(department_id: str) -> Dict[str, Any]:
 
 
 def build_department_system_prompt(template: Dict[str, Any]) -> str:
-    """학과 템플릿으로부터 시스템 프롬프트 조각을 생성합니다."""
     dept = template.get("department", {})
     tone = template.get("tone", {})
-    emphasis_list = template.get("emphasis", [])
+    purpose = template.get("purpose", "")
+    translation_guides = template.get("translation_guides", [])
+    terminology = template.get("terminology", [])
+    analogy_examples = template.get("analogy_examples", [])
+    avoid = template.get("avoid", [])
 
     lines = [
-        f"당신은 **{dept.get('name', '')}** 보고서 작성 전문가입니다.",
+        f"당신은 **{dept.get('name', '')}** 학생을 위한 보고서 재설명 전문가입니다.",
         "",
         "[학과 특성]",
         dept.get("description", ""),
         "",
+        "[재작성 목적]",
+        purpose,
+        "",
         "[작성 톤 & 스타일]",
         tone.get("description", ""),
         "",
-        "[강조 사항]",
+        "[학과별 이해 가이드]",
     ]
-    for item in emphasis_list:
+    for item in translation_guides:
         lines.append(f"- {item}")
+    if terminology:
+        lines.extend(["", "[활용하면 좋은 학과 용어]"])
+        lines.append(", ".join(str(item) for item in terminology))
+    if analogy_examples:
+        lines.extend(["", "[설명용 비유 예시]"])
+        for item in analogy_examples:
+            lines.append(f"- {item}")
+    if avoid:
+        lines.extend(["", "[주의할 점]"])
+        for item in avoid:
+            lines.append(f"- {item}")
     return "\n".join(lines)
 
 
 def build_sections_guide(template: Dict[str, Any]) -> str:
-    """섹션 정의로부터 보고서 구조 가이드 텍스트를 생성합니다."""
     sections = template.get("sections", [])
     if not sections:
         return ""
-    lines = ["[보고서 구조]"]
+    lines = ["[권장 재구성 흐름]"]
     for sec in sections:
         required_mark = "(필수)" if sec.get("required", True) else "(선택)"
         lines.append(f"### {sec['title']} {required_mark}")
@@ -99,7 +100,6 @@ def build_sections_guide(template: Dict[str, Any]) -> str:
 
 
 def build_format_guide(template: Dict[str, Any]) -> str:
-    """형식 가이드 텍스트를 생성합니다."""
     fmt = template.get("format", {})
     if not fmt:
         return ""
@@ -122,11 +122,6 @@ def build_format_guide(template: Dict[str, Any]) -> str:
 
 
 def build_full_department_context(department_id: str) -> Optional[str]:
-    """department_id → 프롬프트에 삽입 가능한 전체 학과 컨텍스트 문자열 반환.
-
-    Returns:
-        학과 컨텍스트 문자열 또는 None (department_id가 없을 때)
-    """
     if not department_id:
         return None
     try:

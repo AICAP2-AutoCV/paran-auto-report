@@ -32,12 +32,10 @@ def save_document(report: str, output_path: Path, fmt: str, title: str, author: 
         return
 
     # Word / PDF 변환
-    from src.document_generator import DocumentGenerator
+    from src.document import DocumentGenerator
     gen = DocumentGenerator()
 
-    if fmt == "docx":
-        gen.generate_from_markdown(report, str(output_path), title=title, author=author)
-    elif fmt == "pdf":
+    if fmt in ("docx", "pdf"):
         gen.generate_from_markdown(report, str(output_path), title=title, author=author)
     elif fmt == "all":
         docx_path = output_path.with_suffix(".docx")

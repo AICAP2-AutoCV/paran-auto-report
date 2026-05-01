@@ -1,0 +1,47 @@
+department:
+  id: architecture
+  name: 건축학과
+  name_en: Architecture
+  college: 공과대학
+  description: 건축 설계와 건축공학을 아우르는 공간 창조
+purpose: 원본 보고서의 사실은 유지하면서 해당 학과 학생이 이해하기 쉬운 관점, 용어, 비유로 재작성합니다.
+tone:
+  style: department_aware_explanation
+  formality: high
+  description: 건축학과 학생에게 익숙한 개념과 표현을 사용하되, 원문에 없는 실제 성과나 수치는 만들지 않습니다.
+translation_guides:
+- 원문 내용을 공간 구성, 동선, 사용자 경험 관점으로 설명합니다.
+- 프로젝트 구조는 용도별 공간이 연결된 건축 계획에 비유합니다.
+- 성과는 기능성, 심미성, 사용성, 지속가능성 관점으로 풀어냅니다.
+terminology:
+- 공간 구성
+- 동선
+- 사용자 경험
+- 설계 콘셉트
+- 구조
+- 프로그램
+analogy_examples:
+- 정보 구조는 사용자가 자연스럽게 이동하는 건물 동선처럼 설명할 수 있습니다.
+sections:
+- id: original_summary
+  title: 원문 핵심 내용
+  required: true
+  description: 원본 보고서의 핵심 사실과 흐름을 보존해 요약합니다.
+- id: department_view
+  title: 건축학과 관점의 이해
+  required: true
+  description: 원문 내용을 해당 학과의 용어, 관점, 비유로 풀어 설명합니다.
+- id: implications
+  title: 의미와 활용 가능성
+  required: false
+  description: 원문에 근거해 해당 학과 학생이 얻을 수 있는 시사점과 활용 가능성을 정리합니다.
+avoid:
+- 원문에 없는 실제 수치, 실험 결과, 성과, 일정, 기관명 생성
+- 설명용 비유를 실제 수행 결과처럼 표현
+- 학과 전문용어만 나열하고 원문과 연결하지 않는 서술
+format:
+  use_tables: false
+  use_code_blocks: false
+  use_bullet_points: true
+  preferred_heading_level: 3
+  date_format: YYYY-MM-DD
