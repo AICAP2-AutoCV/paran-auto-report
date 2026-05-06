@@ -1,20 +1,23 @@
 """Notion 데이터베이스 수집기"""
 
+from pathlib import Path
 from typing import List, Dict, Optional
 
+import requests
 from notion_client import Client as NotionClient
 
 from .models import PageChunk
+from ..config import IMAGE_DIR
 
 
 class NotionCollector:
-    def __init__(self, token: str, database_id: str):
+    def __init__(self, token: str, database_id: Optional[str] = None):
         if not token:
             raise ValueError("NOTION_TOKEN이 필요합니다.")
-        if not database_id:
-            raise ValueError("NOTION_DATABASE_ID 또는 DATA_SOURCE_ID가 필요합니다.")
         self.client = NotionClient(auth=token)
         self.database_id = database_id
+        self.image_dir = Path(IMAGE_DIR)
+        self.image_dir.mkdir(parents=True, exist_ok=True)
 
     def get_all_blocks(self, block_id: str) -> List[Dict]:
         blocks, cursor = [], None
@@ -35,8 +38,24 @@ class NotionCollector:
     def _rich_text(rich_text_list: List) -> str:
         return "".join(t.get("plain_text", "") for t in (rich_text_list or []))
 
-    def _block_to_text(self, block: Dict, depth: int = 0) -> str:
+    def _download_image(self, url: str, page_id: str, block_id: str) -> Optional[str]:
+        try:
+            response = requests.get(url, timeout=30)
+            response.raise_for_status()
+            ext = url.split("?")[0].rsplit(".", 1)[-1].lower() if "." in url.split("?")[0] else "png"
+            if ext not in {"jpg", "jpeg", "png", "gif", "webp"}:
+                ext = "png"
+            filename = f"{page_id}_{block_id}.{ext}"
+            path = self.image_dir / filename
+            path.write_bytes(response.content)
+            return f"notion_images/{filename}"
+        except Exception as e:
+            print(f"  ⚠️ 이미지 다운로드 실패: {e}")
+            return None
+
+    def _block_to_text(self, block: Dict, page_id: str, depth: int = 0) -> str:
         btype = block["type"]
+        block_id = block.get("id", "")
         indent = "  " * depth
         result = ""
 
@@ -68,7 +87,8 @@ class NotionCollector:
             img = block["image"]
             url = (img.get("file") or img.get("external") or {}).get("url", "")
             caption = self._rich_text(img.get("caption", []))
-            result = f"{indent}[Image: {url}]" + (f" - {caption}" if caption else "")
+            local_path = self._download_image(url, page_id, block_id) if url else None
+            result = f"{indent}[Image: {local_path or url}]" + (f" - {caption}" if caption else "")
         elif btype == "table_row":
             cells = block["table_row"].get("cells", [])
             result = indent + "| " + " | ".join(self._rich_text(c) for c in cells) + " |"
@@ -80,10 +100,40 @@ class NotionCollector:
             result = f"{indent}[{btype}]"
 
         for child in block.get("children", []):
-            child_text = self._block_to_text(child, depth + 1)
+            child_text = self._block_to_text(child, page_id, depth + 1)
             if child_text:
                 result += "\n" + child_text
         return result
+
+    def _extract_images(self, blocks: List[Dict], section_title: str = "") -> List[Dict]:
+        images = []
+        current_section = section_title
+        for block in blocks:
+            btype = block.get("type")
+            if btype in ("heading_1", "heading_2", "heading_3"):
+                title = self._rich_text(block[btype].get("rich_text", [])).strip()
+                if title:
+                    current_section = title
+
+            if btype == "image":
+                img = block["image"]
+                file_obj = img.get("file") or img.get("external") or {}
+                url = file_obj.get("url", "")
+                caption = self._rich_text(img.get("caption", [])).strip()
+                if url:
+                    images.append({
+                        "block_id": block.get("id", ""),
+                        "url": url,
+                        "caption": caption,
+                        "description": caption,
+                        "section_title": current_section,
+                        "source": "notion",
+                    })
+
+            children = block.get("children", [])
+            if children:
+                images.extend(self._extract_images(children, current_section))
+        return images
 
     def _extract_properties(self, page: Dict) -> Dict:
         result = {}
@@ -128,8 +178,35 @@ class NotionCollector:
                 return v
         return "Untitled"
 
+    def _page_to_data(self, page: Dict, idx: int, total: int) -> Dict:
+        page_id = page["id"]
+        properties = self._extract_properties(page)
+        title = self._get_title(properties)
+        print(f"[{idx + 1}/{total}] {title}")
+        try:
+            blocks = self.get_all_blocks(page_id)
+            lines = [self._block_to_text(b, page_id) for b in blocks]
+            content = "\n".join(line for line in lines if line)
+            images = self._extract_images(blocks)
+            print(f"  → 블록 {len(blocks)}개, {len(content)}자, 이미지 {len(images)}개")
+        except Exception as e:
+            print(f"  ⚠️  블록 수집 실패: {e}")
+            content = ""
+            images = []
+        return {
+            "page_id": page_id,
+            "title": title,
+            "content": content,
+            "images": images,
+            "properties": properties,
+            "created_time": page.get("created_time", ""),
+            "last_edited_time": page.get("last_edited_time", ""),
+        }
+
     def collect_all(self, limit: Optional[int] = None) -> List[Dict]:
-        print(f"📥 Notion 수집 시작: {self.database_id}")
+        if not self.database_id:
+            raise ValueError("collect_all() 호출에는 database_id가 필요합니다.")
+        print(f"📥 Notion DB 수집 시작: {self.database_id}")
         pages, cursor = [], None
         while True:
             kwargs = {"page_size": 100}
@@ -146,29 +223,12 @@ class NotionCollector:
             pages = pages[:limit]
         print(f"✅ 총 {len(pages)}개 페이지\n")
 
-        all_data = []
-        for idx, page in enumerate(pages):
-            page_id = page["id"]
-            properties = self._extract_properties(page)
-            title = self._get_title(properties)
-            print(f"[{idx + 1}/{len(pages)}] {title}")
-            try:
-                blocks = self.get_all_blocks(page_id)
-                lines = [self._block_to_text(b) for b in blocks]
-                content = "\n".join(line for line in lines if line)
-                print(f"  → 블록 {len(blocks)}개, {len(content)}자")
-            except Exception as e:
-                print(f"  ⚠️  블록 수집 실패: {e}")
-                content = ""
-
-            all_data.append({
-                "page_id": page_id,
-                "title": title,
-                "content": content,
-                "properties": properties,
-                "created_time": page.get("created_time", ""),
-                "last_edited_time": page.get("last_edited_time", ""),
-            })
-
-        print(f"\n🎉 수집 완료: {len(all_data)}개")
+        all_data = [self._page_to_data(page, idx, len(pages)) for idx, page in enumerate(pages)]
+        print(f"\n🎉 DB 수집 완료: {len(all_data)}개")
         return all_data
+
+    def collect_single_page(self, page_id: str) -> Dict:
+        """단일 Notion 페이지(데이터베이스가 아닌 일반 페이지)를 수집."""
+        print(f"📄 단일 페이지 수집: {page_id}")
+        page = self.client.pages.retrieve(page_id=page_id)
+        return self._page_to_data(page, 0, 1)

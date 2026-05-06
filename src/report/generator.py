@@ -1,5 +1,6 @@
 """LangChain RAG 보고서 생성기 (Langfuse 트레이싱 포함)"""
 
+import json
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -12,11 +13,12 @@ from langchain_core.output_parsers import StrOutputParser
 from langfuse import Langfuse
 from langfuse.langchain import CallbackHandler as LangfuseCallbackHandler
 from langfuse.types import TraceContext
-from qdrant_client.models import DatetimeRange, Filter, FieldCondition
+from qdrant_client.models import DatetimeRange, Filter, FieldCondition, MatchValue
 
 from ..config import (
     OPENAI_API_KEY, OPENAI_BASE_URL, LLM_MODEL,
     LANGFUSE_SECRET_KEY, LANGFUSE_PUBLIC_KEY, LANGFUSE_HOST,
+    DATA_DIR, PLAN_PAGE_ID,
 )
 from ..ingestion import load_vectorstore
 from .department import load_department_template, build_full_department_context
@@ -53,10 +55,13 @@ REPORT_PROMPT = ChatPromptTemplate.from_messages([
 ## 1. 주요활동
 
 ### 가. 최초 계획
+- [계획서 - 도전과제 추진일정]에 주차별 계획 표가 있으면, 보고 기간에 해당하는 주차의 팀/개인 계획을 그대로 사용하세요.
+- 해당 정보가 없으면 "확인 필요"로 작성하세요.
+
 | 구분 | 계획 내용 |
 |---|---|
-| 팀 | 원래 계획된 팀 활동 |
-| 개인 | 원래 계획된 개인 활동 |
+| 팀 | 해당 주차 팀 계획 |
+| 개인 | 해당 주차 개인 계획 |
 
 ### 나. 실제 활동내용 및 목표달성 여부
 | 구분 | 투입시간 | 실제 활동내용 | 목표달성 여부 |
@@ -77,10 +82,14 @@ REPORT_PROMPT = ChatPromptTemplate.from_messages([
 - 제목 태그 [TITLE]...[/TITLE]는 반드시 첫 줄에 한 번만 작성하세요."""),
     ("human", """{date_range_info}주제: {topic}
 
-[참고 문서]
+[계획서 - 도전과제 추진일정]
+{plan_context}
+
+[활동 기록 참고 문서]
 {context}
 
-위 내용을 바탕으로 보고서를 작성해주세요."""),
+위 내용을 바탕으로 보고서를 작성해주세요.
+"가. 최초 계획" 표는 반드시 [계획서 - 도전과제 추진일정]에서 보고 기간에 해당하는 주차 내용을 찾아 작성하세요."""),
 ])
 
 PROMPTS_DIR = Path(__file__).parent.parent.parent / "prompts" / "department_report"
@@ -91,16 +100,10 @@ def _build_qdrant_filter(since: Optional[datetime], until: Optional[datetime]) -
     if not since and not until:
         return None
     conditions = []
-    if since:
-        conditions.append(FieldCondition(
-            key="last_edited_time",
-            range=DatetimeRange(gte=since),
-        ))
-    if until:
-        conditions.append(FieldCondition(
-            key="last_edited_time",
-            range=DatetimeRange(lte=until),
-        ))
+    conditions.append(FieldCondition(
+        key="metadata.prop_날짜",
+        range=DatetimeRange(gte=since, lte=until),
+    ))
     return Filter(must=conditions)
 
 
@@ -115,6 +118,92 @@ def _format_docs(docs: List[Document]) -> str:
         header = f"[{i}] {title}" + (f" > {section}" if section != title else "") + (f" ({edited})" if edited else "")
         parts.append(f"{header}\n{doc.page_content}")
     return "\n\n---\n\n".join(parts)
+
+
+def _collect_images_from_docs(docs: List[Document], max_images: int = 4) -> List[dict]:
+    """검색된 문서 메타데이터에서 관련 이미지 후보를 중복 제거해 추출."""
+    images = []
+    seen = set()
+    for doc in docs:
+        image_paths = doc.metadata.get("image_paths") or []
+        image_descriptions = doc.metadata.get("image_descriptions") or []
+        if isinstance(image_paths, str):
+            image_paths = [image_paths]
+        if isinstance(image_descriptions, str):
+            image_descriptions = [image_descriptions]
+
+        for idx, image_path in enumerate(image_paths):
+            if not image_path or image_path in seen:
+                continue
+            seen.add(image_path)
+            description = image_descriptions[idx] if idx < len(image_descriptions) else ""
+            images.append({
+                "path": image_path,
+                "description": description or doc.metadata.get("section_title", "") or doc.metadata.get("page_title", ""),
+                "source": doc.metadata.get("page_title", ""),
+                "section_title": doc.metadata.get("section_title", ""),
+            })
+            if len(images) >= max_images:
+                return images
+
+        raw = doc.metadata.get("images_json")
+        if not raw:
+            continue
+        try:
+            candidates = json.loads(raw)
+        except (TypeError, json.JSONDecodeError):
+            continue
+        if not isinstance(candidates, list):
+            continue
+
+        for image in candidates:
+            if not isinstance(image, dict):
+                continue
+            image_ref = image.get("path")
+            if not image_ref and image.get("block_id"):
+                page_id = doc.metadata.get("page_id", "")
+                url_path = (image.get("url") or "").split("?", 1)[0]
+                suffix = Path(url_path).suffix or ".png"
+                candidate = f"notion_images/{page_id}_{image['block_id']}{suffix}"
+                if (Path(DATA_DIR) / candidate).exists():
+                    image_ref = candidate
+            image_ref = image_ref or image.get("url")
+
+            key = image_ref or image.get("block_id")
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            enriched = {
+                **image,
+                "path": image_ref,
+                "page_title": doc.metadata.get("page_title", ""),
+                "section_title": image.get("section_title") or doc.metadata.get("section_title", ""),
+            }
+            if not enriched.get("description"):
+                parts = [enriched.get("caption"), enriched.get("page_title"), enriched.get("section_title")]
+                enriched["description"] = " - ".join(p for p in parts if p)
+            images.append(enriched)
+            if len(images) >= max_images:
+                return images
+    return images
+
+
+def _fetch_plan_context(vs) -> str:
+    """계획서 페이지의 도전과제 추진일정 내용을 Qdrant에서 추출."""
+    if not PLAN_PAGE_ID:
+        return ""
+    plan_filter = Filter(must=[
+        FieldCondition(key="metadata.page_id", match=MatchValue(value=PLAN_PAGE_ID))
+    ])
+    docs = vs.similarity_search(
+        "도전과제 추진일정 주차 팀 개인 계획",
+        k=20,
+        filter=plan_filter,
+    )
+    if not docs:
+        return ""
+    docs.sort(key=lambda d: d.metadata.get("chunk_id", ""))
+    return "\n\n".join(d.page_content for d in docs)
 
 
 def _build_date_range_info(since: Optional[datetime], until: Optional[datetime]) -> str:
@@ -160,6 +249,8 @@ def generate_report(
     vs = load_vectorstore()
     handler = get_langfuse_handler(session_id=session_id, user_id=user_id, trace_id=trace_id)
 
+    plan_context = _fetch_plan_context(vs)
+
     qdrant_filter = _build_qdrant_filter(since, until)
     print(f"🔍 '{topic}' 관련 문서 검색 중 (k={k})...")
     docs = vs.similarity_search(topic, k=k, filter=qdrant_filter)
@@ -170,12 +261,47 @@ def generate_report(
 
     chain = REPORT_PROMPT | _make_llm() | StrOutputParser()
     result = chain.invoke(
-        {"topic": topic, "context": context, "date_range_info": date_range_info},
+        {"topic": topic, "context": context, "date_range_info": date_range_info, "plan_context": plan_context},
         config={"callbacks": [handler]},
     )
     _langfuse.flush()
     print("✅ 보고서 생성 완료")
     return result
+
+
+def generate_report_with_images(
+    topic: str,
+    k: int = 10,
+    since: Optional[datetime] = None,
+    until: Optional[datetime] = None,
+    session_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+    trace_id: Optional[str] = None,
+    max_images: int = 4,
+) -> dict:
+    """보고서 본문과 검색 문맥에서 나온 관련 이미지를 함께 반환."""
+    vs = load_vectorstore()
+    handler = get_langfuse_handler(session_id=session_id, user_id=user_id, trace_id=trace_id)
+
+    plan_context = _fetch_plan_context(vs)
+
+    qdrant_filter = _build_qdrant_filter(since, until)
+    print(f"🔍 '{topic}' 관련 문서/이미지 검색 중 (k={k})...")
+    docs = vs.similarity_search(topic, k=k, filter=qdrant_filter)
+    print(f"   검색 결과: {len(docs)}개 문서 사용")
+
+    date_range_info = _build_date_range_info(since, until)
+    context = _format_docs(docs)
+    images = _collect_images_from_docs(docs, max_images=max_images)
+
+    chain = REPORT_PROMPT | _make_llm() | StrOutputParser()
+    report = chain.invoke(
+        {"topic": topic, "context": context, "date_range_info": date_range_info, "plan_context": plan_context},
+        config={"callbacks": [handler]},
+    )
+    _langfuse.flush()
+    print(f"✅ 보고서 생성 완료 (관련 이미지 {len(images)}개)")
+    return {"report": report, "images": images, "source_count": len(docs)}
 
 
 def generate_report_stream(
@@ -191,6 +317,8 @@ def generate_report_stream(
     vs = load_vectorstore()
     handler = get_langfuse_handler(session_id=session_id, user_id=user_id, trace_id=trace_id)
 
+    plan_context = _fetch_plan_context(vs)
+
     qdrant_filter = _build_qdrant_filter(since, until)
     print(f"🔍 '{topic}' 관련 문서 검색 중 (k={k})...")
     docs = vs.similarity_search(topic, k=k, filter=qdrant_filter)
@@ -201,7 +329,7 @@ def generate_report_stream(
 
     chain = REPORT_PROMPT | _make_llm() | StrOutputParser()
     for chunk in chain.stream(
-        {"topic": topic, "context": context, "date_range_info": date_range_info},
+        {"topic": topic, "context": context, "date_range_info": date_range_info, "plan_context": plan_context},
         config={"callbacks": [handler]},
     ):
         yield chunk

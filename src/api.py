@@ -4,12 +4,14 @@ import json
 import os
 import tempfile
 import uuid
+from pathlib import Path
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 
@@ -18,6 +20,7 @@ from .document import DocumentGenerator
 from .langfuse_feedback import save_feedback
 from .report import (
     generate_report_stream,
+    generate_report_with_images,
     last_n_days,
     regenerate_for_department_stream,
     this_week,
@@ -31,6 +34,10 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["X-Trace-ID"],
 )
+
+_FE_DIR = Path(__file__).parent.parent.parent / "paran-auto-report-fe"
+if _FE_DIR.exists():
+    app.mount("/ui", StaticFiles(directory=str(_FE_DIR), html=True), name="frontend")
 
 
 # ── 요청 모델 ────────────────────────────────────────────────────────────────
@@ -59,6 +66,10 @@ class ExportRequest(BaseModel):
     format: str = "docx"              # "docx" | "pdf"
     title: str = "보고서"
     author: str = "Unknown"
+    student_id: Optional[str] = None
+    department: Optional[str] = None
+    team_name: Optional[str] = None
+    images: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class FeedbackRequest(BaseModel):
@@ -143,6 +154,26 @@ def generate_report_endpoint(req: GenerateRequest):
     return StreamingResponse(_sse(generator), media_type="text/event-stream", headers=headers)
 
 
+@app.post("/report/generate-full")
+def generate_report_full_endpoint(req: GenerateRequest):
+    """Notion RAG 보고서 본문과 관련 이미지 메타데이터를 함께 반환."""
+    since = _parse_since(req)
+    until = _parse_until(req.until)
+    session_id = req.session_id or f"api-full-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    trace_id = uuid.uuid4().hex
+
+    payload = generate_report_with_images(
+        topic=req.topic,
+        k=req.k,
+        since=since,
+        until=until,
+        session_id=session_id,
+        user_id=req.user_id,
+        trace_id=trace_id,
+    )
+    return {**payload, "trace_id": trace_id}
+
+
 @app.post("/report/regenerate")
 def regenerate_report_endpoint(req: RegenerateRequest):
     """
@@ -196,6 +227,10 @@ def export_document(req: ExportRequest):
             output_path=tmp_path,
             title=req.title,
             author=req.author,
+            student_id=req.student_id,
+            department=req.department,
+            team_name=req.team_name,
+            images=req.images,
         )
     except Exception as e:
         os.unlink(tmp_path)

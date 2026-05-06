@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.report import generate_report, generate_report_stream, last_n_days, this_week
+from src.report import generate_report, generate_report_stream, generate_report_with_images, last_n_days, this_week
 
 
 def parse_datetime(s: str) -> datetime:
@@ -22,7 +22,7 @@ def parse_datetime(s: str) -> datetime:
     raise argparse.ArgumentTypeError(f"날짜 형식 오류: {s} (YYYY-MM-DD 사용)")
 
 
-def save_document(report: str, output_path: Path, fmt: str, title: str, author: str):
+def save_document(report: str, output_path: Path, fmt: str, title: str, author: str, images=None):
     """마크다운 보고서를 지정된 형식으로 저장"""
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -36,15 +36,15 @@ def save_document(report: str, output_path: Path, fmt: str, title: str, author: 
     gen = DocumentGenerator()
 
     if fmt in ("docx", "pdf"):
-        gen.generate_from_markdown(report, str(output_path), title=title, author=author)
+        gen.generate_from_markdown(report, str(output_path), title=title, author=author, images=images)
     elif fmt == "all":
         docx_path = output_path.with_suffix(".docx")
         pdf_path = output_path.with_suffix(".pdf")
         md_path = output_path.with_suffix(".md")
         md_path.write_text(report, encoding="utf-8")
         print(f"💾 마크다운 저장: {md_path}")
-        gen.generate_from_markdown(report, str(docx_path), title=title, author=author)
-        gen.generate_from_markdown(report, str(pdf_path), title=title, author=author)
+        gen.generate_from_markdown(report, str(docx_path), title=title, author=author, images=images)
+        gen.generate_from_markdown(report, str(pdf_path), title=title, author=author, images=images)
         return
 
     print(f"💾 저장 완료: {output_path}")
@@ -107,11 +107,17 @@ if __name__ == "__main__":
             report += chunk
         print()
     else:
-        report = generate_report(
+        payload = generate_report_with_images(
             args.topic, k=args.k, since=since, until=args.until,
             session_id=session_id, user_id=args.user_id,
         )
+        report = payload["report"]
+        images = payload["images"]
         print("\n" + report)
+        if images:
+            print(f"\n🖼️ 관련 이미지 {len(images)}개 발견")
+    if args.stream:
+        images = []
 
     if args.output:
         output_path = Path(args.output)
@@ -125,4 +131,4 @@ if __name__ == "__main__":
         ext = ".md" if fmt == "all" else f".{fmt}"
         output_path = base.with_suffix(ext)
 
-    save_document(report, output_path, fmt, title=args.topic, author=author)
+    save_document(report, output_path, fmt, title=args.topic, author=author, images=images)

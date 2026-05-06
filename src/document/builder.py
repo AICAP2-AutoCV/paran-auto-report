@@ -1,9 +1,12 @@
 """python-docx Word 문서 빌더"""
 
 import re
+import tempfile
 from pathlib import Path
 from typing import List
+from urllib.parse import urlparse
 
+import requests
 from docx import Document
 from docx.shared import Pt, RGBColor, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -36,10 +39,31 @@ class WordDocBuilder:
             run.italic = True
         return para
 
-    def add_image(self, image_path: str, description: str = None, max_width: float = 5.0):
-        full_path = self.image_base_dir / image_path
+    def _resolve_image_path(self, image_path: str) -> Path | None:
+        if not image_path:
+            return None
+        if image_path.startswith(("http://", "https://")):
+            try:
+                response = requests.get(image_path, timeout=15)
+                response.raise_for_status()
+                suffix = Path(urlparse(image_path).path).suffix or ".png"
+                tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+                tmp.write(response.content)
+                tmp.close()
+                return Path(tmp.name)
+            except Exception as e:
+                print(f"⚠️ 이미지 다운로드 실패: {image_path}, 오류: {e}")
+                return None
 
-        if not full_path.exists():
+        full_path = Path(image_path)
+        if full_path.exists():
+            return full_path
+        return self.image_base_dir / image_path
+
+    def add_image(self, image_path: str, description: str = None, max_width: float = 5.0):
+        full_path = self._resolve_image_path(image_path)
+
+        if full_path is None or not full_path.exists():
             if description:
                 para = self.doc.add_paragraph()
                 run = para.add_run(f"[이미지: {description}]")

@@ -88,6 +88,67 @@ class DocumentGenerator:
             return first_sentence
         return first_sentence[:max_length - 3] + "..."
 
+    def _collect_result_images(self, report_data: Dict[str, Any], max_images: int = 4) -> List[Dict[str, Any]]:
+        images = []
+        seen = set()
+        for result in report_data.get("results", []):
+            for image in result.get("images", []) or []:
+                key = image.get("path") or image.get("url") or image.get("source") or image.get("description")
+                if not key or key in seen:
+                    continue
+                seen.add(key)
+                images.append(image)
+                if len(images) >= max_images:
+                    return images
+        return images
+
+    def _append_related_images(self, target, images: List[Dict[str, Any]], doc=None, max_width: float = 13.5):
+        if not images:
+            return
+
+        builder = WordDocBuilder(doc or target, self.image_base_dir)
+        for image in images:
+            image_ref = image.get("path") or image.get("url")
+            description = (
+                image.get("description")
+                or image.get("caption")
+                or image.get("section_title")
+                or image.get("page_title")
+                or "이미지"
+            )
+            caption = self._shorten_image_caption(description, max_length=140)
+            full_path = builder._resolve_image_path(image_ref)
+            if full_path is None or not full_path.exists():
+                para = target.add_paragraph()
+                run = para.add_run(f"[이미지: {caption}]")
+                run.font.size = Pt(10)
+                run.font.italic = True
+                run.font.color.rgb = RGBColor(128, 128, 128)
+                continue
+
+            try:
+                image_para = target.add_paragraph()
+                image_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                image_para.paragraph_format.space_before = Pt(6)
+                image_para.paragraph_format.space_after = Pt(2)
+                run = image_para.add_run()
+                run.add_picture(str(full_path), width=Cm(max_width))
+
+                caption_para = target.add_paragraph()
+                caption_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                caption_para.paragraph_format.space_before = Pt(0)
+                caption_para.paragraph_format.space_after = Pt(6)
+                caption_run = caption_para.add_run(caption)
+                caption_run.font.size = Pt(9)
+                caption_run.font.italic = True
+                caption_run.font.color.rgb = RGBColor(100, 100, 100)
+            except Exception as e:
+                print(f"⚠️ 이미지 삽입 실패: {full_path}, 오류: {e}")
+                para = target.add_paragraph()
+                run = para.add_run(f"[이미지: {caption}]")
+                run.font.size = Pt(10)
+                run.font.italic = True
+
     def _is_weekly_activity_report(self, report_data: Dict[str, Any]) -> bool:
         results = report_data.get('results', [])
         if not results or not results[0].get('success'):
@@ -141,6 +202,49 @@ class DocumentGenerator:
             body.append(line)
         return '\n'.join(body).strip()
 
+    def _infer_semester_and_week(
+        self,
+        answer: str,
+        basic: Dict[str, str],
+        created_date: str,
+    ) -> tuple[str, str, str]:
+        """보고 기간 기준으로 학기와 주차 라벨을 계산."""
+        period = basic.get("보고 기간", "")
+        date_match = re.search(r'(\d{4}-\d{2}-\d{2})', period or answer)
+        base_date = None
+        if date_match:
+            try:
+                base_date = datetime.strptime(date_match.group(1), "%Y-%m-%d")
+            except ValueError:
+                base_date = None
+        if base_date is None:
+            try:
+                base_date = datetime.strptime(created_date[:10], "%Y-%m-%d")
+            except ValueError:
+                base_date = datetime.now()
+
+        if base_date.month >= 9:
+            semester_year = base_date.year
+            semester_no = 2
+            semester_start = datetime(base_date.year, 9, 1)
+        elif base_date.month >= 3:
+            semester_year = base_date.year
+            semester_no = 1
+            semester_start = datetime(base_date.year, 3, 1)
+        else:
+            semester_year = base_date.year - 1
+            semester_no = 2
+            semester_start = datetime(base_date.year - 1, 9, 1)
+
+        week_match = re.search(r'(\d+)\s*주차', answer)
+        if week_match:
+            week_no = week_match.group(1)
+        else:
+            days = max((base_date.date() - semester_start.date()).days, 0)
+            week_no = str(days // 7 + 1)
+
+        return f"{semester_year}-{semester_no}", week_no, f"{week_no}주차 활동내용"
+
     def _set_cell_border(self, cell, color: str = "000000", size: str = "8"):
         tc_pr = cell._tc.get_or_add_tcPr()
         borders = tc_pr.first_child_found_in("w:tcBorders")
@@ -180,6 +284,7 @@ class DocumentGenerator:
         if fill:
             self._shade_cell(cell, fill)
         self._set_cell_border(cell)
+        self._set_cell_margin(cell)
         lines = str(text or "").splitlines() or [""]
         paragraph = cell.paragraphs[0]
         paragraph.alignment = align
@@ -198,8 +303,138 @@ class DocumentGenerator:
         for row in table.rows:
             for cell in row.cells:
                 self._set_cell_border(cell)
+                self._set_cell_margin(cell)
 
-    def _add_report_paragraphs(self, doc: Document, text: str):
+    def _set_cell_margin(self, cell, top=28, left=102, bottom=28, right=102):
+        """셀 내부 여백 설정 (dxa 단위, 원본 28/102 기준)."""
+        tcPr = cell._tc.get_or_add_tcPr()
+        tcMar = tcPr.find(qn('w:tcMar'))
+        if tcMar is None:
+            tcMar = OxmlElement('w:tcMar')
+            tcPr.append(tcMar)
+        for side, val in [('top', top), ('left', left), ('bottom', bottom), ('right', right)]:
+            el = tcMar.find(qn(f'w:{side}'))
+            if el is None:
+                el = OxmlElement(f'w:{side}')
+                tcMar.append(el)
+            el.set(qn('w:w'), str(val))
+            el.set(qn('w:type'), 'dxa')
+
+    def _set_row_height(self, row, val_dxa):
+        """행 최소 높이 설정."""
+        trPr = row._tr.get_or_add_trPr()
+        trH = trPr.find(qn('w:trHeight'))
+        if trH is None:
+            trH = OxmlElement('w:trHeight')
+            trPr.append(trH)
+        trH.set(qn('w:val'), str(val_dxa))
+        trH.set(qn('w:hRule'), 'atLeast')
+
+    def _set_para_spacing(self, para, before=0, after=0, line=240):
+        """단락 여백 및 줄간격 설정."""
+        pPr = para._p.get_or_add_pPr()
+        sp = pPr.find(qn('w:spacing'))
+        if sp is None:
+            sp = OxmlElement('w:spacing')
+            pPr.append(sp)
+        sp.set(qn('w:before'), str(before))
+        sp.set(qn('w:after'), str(after))
+        sp.set(qn('w:line'), str(line))
+        sp.set(qn('w:lineRule'), 'auto')
+
+    def _set_col_widths(self, table, widths_cm):
+        """tblGrid 기준 열 너비 설정 (merged cells에서도 안전)."""
+        tbl = table._tbl
+        tblGrid = tbl.find(qn('w:tblGrid'))
+        if tblGrid is None:
+            tblGrid = OxmlElement('w:tblGrid')
+            tbl.insert(0, tblGrid)
+        for gc in list(tblGrid.findall(qn('w:gridCol'))):
+            tblGrid.remove(gc)
+        for w in widths_cm:
+            gc = OxmlElement('w:gridCol')
+            gc.set(qn('w:w'), str(int(w * 566.9)))
+            tblGrid.append(gc)
+        tblPr = tbl.find(qn('w:tblPr'))
+        if tblPr is not None:
+            tblW = tblPr.find(qn('w:tblW'))
+            if tblW is None:
+                tblW = OxmlElement('w:tblW')
+                tblPr.append(tblW)
+            tblW.set(qn('w:w'), str(int(sum(widths_cm) * 566.9)))
+            tblW.set(qn('w:type'), 'dxa')
+
+    def _set_col_widths_dxa(self, table, widths_dxa, indent_dxa=-102):
+        """원본 양식의 dxa 기반 표 너비/들여쓰기 설정."""
+        tbl = table._tbl
+        tblGrid = tbl.find(qn('w:tblGrid'))
+        if tblGrid is None:
+            tblGrid = OxmlElement('w:tblGrid')
+            tbl.insert(0, tblGrid)
+        for gc in list(tblGrid.findall(qn('w:gridCol'))):
+            tblGrid.remove(gc)
+        for width in widths_dxa:
+            gc = OxmlElement('w:gridCol')
+            gc.set(qn('w:w'), str(width))
+            tblGrid.append(gc)
+
+        tblPr = tbl.find(qn('w:tblPr'))
+        if tblPr is None:
+            tblPr = OxmlElement('w:tblPr')
+            tbl.insert(0, tblPr)
+
+        tblW = tblPr.find(qn('w:tblW'))
+        if tblW is None:
+            tblW = OxmlElement('w:tblW')
+            tblPr.append(tblW)
+        tblW.set(qn('w:w'), str(sum(widths_dxa)))
+        tblW.set(qn('w:type'), 'dxa')
+
+        jc = tblPr.find(qn('w:jc'))
+        if jc is None:
+            jc = OxmlElement('w:jc')
+            tblPr.append(jc)
+        jc.set(qn('w:val'), 'left')
+
+        ind = tblPr.find(qn('w:tblInd'))
+        if ind is None:
+            ind = OxmlElement('w:tblInd')
+            tblPr.append(ind)
+        ind.set(qn('w:w'), str(indent_dxa))
+        ind.set(qn('w:type'), 'dxa')
+
+    def _add_cell_paragraph(self, cell, text, bold=False, size=10.5, color_rgb=None):
+        """셀 내부에 단락 추가 (여백 없음)."""
+        p = cell.add_paragraph()
+        p.paragraph_format.space_before = Pt(0)
+        p.paragraph_format.space_after = Pt(0)
+        run = p.add_run(text)
+        run.bold = bold
+        run.font.name = "NanumGothic"
+        run.font.size = Pt(size)
+        if color_rgb:
+            run.font.color.rgb = color_rgb
+        return p
+
+    def _add_tight_spacer(self, doc, size_pt=2):
+        """표 사이 구조 분리용 얇은 빈 문단."""
+        para = doc.add_paragraph()
+        para.paragraph_format.space_before = Pt(0)
+        para.paragraph_format.space_after = Pt(0)
+        pPr = para._p.get_or_add_pPr()
+        sp = pPr.find(qn('w:spacing'))
+        if sp is None:
+            sp = OxmlElement('w:spacing')
+            pPr.append(sp)
+        sp.set(qn('w:before'), '0')
+        sp.set(qn('w:after'), '0')
+        sp.set(qn('w:line'), '40')
+        sp.set(qn('w:lineRule'), 'exact')
+        run = para.add_run("")
+        run.font.size = Pt(size_pt)
+        return para
+
+    def _add_report_paragraphs(self, doc, text: str):
         cleaned = re.sub(r'^\s*[-*]\s+', '', text, flags=re.MULTILINE).strip()
         if not cleaned:
             return
@@ -215,7 +450,7 @@ class DocumentGenerator:
             run.font.size = Pt(10.5)
 
     def _generate_weekly_word_template(self, report_data: Dict[str, Any], output_path: str):
-        """학교 제출용 주차별 활동 보고서에 가까운 표 기반 Word 양식."""
+        """학교 제출용 주차별 활동 보고서 — 외부 표 1개 + 중첩 표 구조."""
         results = report_data.get('results', [])
         result = results[0]
         title = result.get('title') or "주차별 활동 보고서"
@@ -241,9 +476,15 @@ class DocumentGenerator:
                 actual_rows = rows
 
         challenge = basic.get("도전과제명") or title
-        report_date = basic.get("제출일자") or created_date
-        week_match = re.search(r'(\d+)\s*주차', answer + "\n" + title)
-        week_label = f"{week_match.group(1)} 주차 활동내용" if week_match else "주차 활동내용"
+        report_date = created_date
+        semester, week_no, week_label = self._infer_semester_and_week(answer, basic, created_date)
+
+        values = [
+            report_data.get("team_name") or basic.get("팀명", "확인 필요"),
+            report_data.get("department") or basic.get("학과", "확인 필요"),
+            report_data.get("student_id") or basic.get("학번", "확인 필요"),
+            (author if author != "Unknown" else None) or basic.get("성명", "확인 필요"),
+        ]
 
         doc = Document()
         section = doc.sections[0]
@@ -254,7 +495,7 @@ class DocumentGenerator:
 
         title_para = doc.add_paragraph()
         title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        title_run = title_para.add_run("2025-2 파란학기제 주차별 보고서")
+        title_run = title_para.add_run(f"{semester} 파란학기제 주차별 보고서")
         title_run.bold = True
         title_run.font.name = "NanumGothic"
         title_run.font.size = Pt(18)
@@ -266,57 +507,86 @@ class DocumentGenerator:
         date_run.font.name = "NanumGothic"
         date_run.font.size = Pt(10.5)
 
-        meta = doc.add_table(rows=5, cols=4)
-        meta.autofit = True
+        # 메타 표 — 원본처럼 활동내용 표와 분리된 4행 표
+        meta = doc.add_table(rows=4, cols=4)
+        meta.autofit = False
         self._style_all_table_cells(meta)
-        headers = ["팀명", "학과", "학번", "성명"]
-        values = [basic.get("팀명", "확인 필요"), basic.get("학과", "확인 필요"), basic.get("학번", "확인 필요"), basic.get("성명", author if author != "Unknown" else "확인 필요")]
-        for idx, header in enumerate(headers):
-            self._set_cell_text(meta.cell(0, idx), header, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER, fill="D9E3F0")
-            self._set_cell_text(meta.cell(1, idx), values[idx], align=WD_ALIGN_PARAGRAPH.CENTER)
+        self._set_col_widths_dxa(meta, [3630, 2310, 2595, 1920])
+        for row, height in zip(meta.rows, [341, 361, 398, 233]):
+            self._set_row_height(row, height)
+
+        for idx, h in enumerate(["팀명", "학과", "학번", "성명"]):
+            self._set_cell_text(meta.cell(0, idx), h, bold=True,
+                                align=WD_ALIGN_PARAGRAPH.CENTER, fill="D9E3F0")
+        for idx, v in enumerate(values):
+            self._set_cell_text(meta.cell(1, idx), v, align=WD_ALIGN_PARAGRAPH.CENTER)
 
         merged = meta.cell(2, 0).merge(meta.cell(2, 3))
-        self._set_cell_text(merged, "도전과제명", bold=True, align=WD_ALIGN_PARAGRAPH.CENTER, fill="D9E3F0")
+        self._set_cell_text(merged, "도전과제명", bold=True,
+                            align=WD_ALIGN_PARAGRAPH.CENTER, fill="D9E3F0")
         merged = meta.cell(3, 0).merge(meta.cell(3, 3))
         self._set_cell_text(merged, challenge, align=WD_ALIGN_PARAGRAPH.CENTER, size=11)
-        merged = meta.cell(4, 0).merge(meta.cell(4, 3))
-        self._set_cell_text(merged, week_label, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER, fill="D9E3F0", size=11)
 
-        doc.add_paragraph()
+        self._add_tight_spacer(doc)
 
-        section_title = doc.add_paragraph()
-        section_run = section_title.add_run("1. 주요활동")
-        section_run.bold = True
-        section_run.font.name = "NanumGothic"
-        section_run.font.size = Pt(12)
+        # 활동내용 표 — 원본처럼 별도 1열 3행 표 안에 본문과 중첩 표를 배치
+        activity = doc.add_table(rows=3, cols=1)
+        activity.autofit = False
+        self._style_all_table_cells(activity)
+        self._set_col_widths_dxa(activity, [10466])
+        for row, height in zip(activity.rows, [426, 8269, 17509]):
+            self._set_row_height(row, height)
 
-        sub = doc.add_paragraph()
-        run = sub.add_run("가. 최초 계획")
-        run.font.name = "NanumGothic"
-        run.font.size = Pt(10.5)
+        self._set_cell_text(activity.cell(0, 0), week_label.replace(" ", ""), bold=True,
+                            align=WD_ALIGN_PARAGRAPH.CENTER, fill="D9E3F0", size=11)
 
-        plan_table = doc.add_table(rows=2, cols=3)
+        content = activity.cell(1, 0)
+        content.vertical_alignment = WD_ALIGN_VERTICAL.TOP
+
+        p0 = content.paragraphs[0]
+        p0.paragraph_format.space_before = Pt(0)
+        p0.paragraph_format.space_after = Pt(0)
+        r0 = p0.add_run("1. 주요활동")
+        r0.bold = True
+        r0.font.name = "NanumGothic"
+        r0.font.size = Pt(12)
+
+        self._add_cell_paragraph(content, "가. 최초 계획 *보완계획서에 기재한 주차별 계획 내용 참고", size=10.5)
+
+        # 중첩 계획 표
+        plan_table = content.add_table(rows=2, cols=3)
+        plan_table.autofit = False
         self._style_all_table_cells(plan_table)
-        for i, header in enumerate(["주차", "팀", "개인"]):
-            self._set_cell_text(plan_table.cell(0, i), header, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER, fill="D9D9D9")
-        self._set_cell_text(plan_table.cell(1, 0), week_match.group(1) if week_match else "", align=WD_ALIGN_PARAGRAPH.CENTER)
+        self._set_col_widths(plan_table, [1.5, 8.0, 8.1])
+        for i, h in enumerate(["주차", "팀", "개인"]):
+            self._set_cell_text(plan_table.cell(0, i), h, bold=True,
+                                align=WD_ALIGN_PARAGRAPH.CENTER, fill="D9D9D9")
+        self._set_cell_text(plan_table.cell(1, 0), week_no, align=WD_ALIGN_PARAGRAPH.CENTER)
         self._set_cell_text(plan_table.cell(1, 1), self._table_value(plan_rows, "팀"), size=10)
         self._set_cell_text(plan_table.cell(1, 2), self._table_value(plan_rows, "개인"), size=10)
 
-        sub = doc.add_paragraph()
-        run = sub.add_run("나. 실제 활동내용 및 목표달성 여부")
-        run.font.name = "NanumGothic"
-        run.font.size = Pt(10.5)
+        self._add_cell_paragraph(content, "나. 실제 활동내용 및 목표달성 여부", size=10.5)
 
-        actual_table = doc.add_table(rows=3, cols=3)
+        # 중첩 실제활동 표 ("팀" 셀 세로 병합)
+        actual_table = content.add_table(rows=3, cols=3)
+        actual_table.autofit = False
         self._style_all_table_cells(actual_table)
-        self._set_cell_text(actual_table.cell(0, 0), "팀", bold=True, align=WD_ALIGN_PARAGRAPH.CENTER, fill="D9D9D9")
-        merged = actual_table.cell(0, 1).merge(actual_table.cell(0, 2))
-        self._set_cell_text(merged, "개인", bold=True, align=WD_ALIGN_PARAGRAPH.CENTER, fill="D9D9D9")
-        self._set_cell_text(actual_table.cell(1, 1), "투입시간", bold=True, align=WD_ALIGN_PARAGRAPH.CENTER, fill="D9D9D9")
-        self._set_cell_text(actual_table.cell(1, 2), "실제 활동내용 및 목표달성 여부", bold=True, align=WD_ALIGN_PARAGRAPH.CENTER, fill="D9D9D9")
+        self._set_col_widths(actual_table, [8.0, 2.5, 7.1])
+
+        team_cell = actual_table.cell(0, 0).merge(actual_table.cell(1, 0))
+        self._set_cell_text(team_cell, "팀", bold=True,
+                            align=WD_ALIGN_PARAGRAPH.CENTER, fill="D9D9D9")
+        merged_indiv = actual_table.cell(0, 1).merge(actual_table.cell(0, 2))
+        self._set_cell_text(merged_indiv, "개인", bold=True,
+                            align=WD_ALIGN_PARAGRAPH.CENTER, fill="D9D9D9")
+        self._set_cell_text(actual_table.cell(1, 1), "투입시간", bold=True,
+                            align=WD_ALIGN_PARAGRAPH.CENTER, fill="D9D9D9")
+        self._set_cell_text(actual_table.cell(1, 2), "실제 활동내용 및 목표달성 여부", bold=True,
+                            align=WD_ALIGN_PARAGRAPH.CENTER, fill="D9D9D9")
 
         team_actual = self._table_col_value(actual_rows, "팀", 2)
+        team_hours = self._table_col_value(actual_rows, "팀", 1, default="")
+        team_status = self._table_col_value(actual_rows, "팀", 3, default="")
         personal_actual = self._table_col_value(actual_rows, "개인", 2)
         hours = "확인 필요"
         status = "확인 필요"
@@ -326,30 +596,34 @@ class DocumentGenerator:
                     hours = row[1].strip()
                 if len(row) > 3 and row[3].strip():
                     status = row[3].strip()
-        self._set_cell_text(actual_table.cell(2, 0), team_actual, size=10)
+        team_parts = [team_actual]
+        if team_hours:
+            team_parts.append(f"투입시간: {team_hours}")
+        if team_status:
+            team_parts.append(f"목표달성 여부: {team_status}")
+        self._set_cell_text(actual_table.cell(2, 0), "\n\n".join(team_parts), size=10)
         self._set_cell_text(actual_table.cell(2, 1), hours, align=WD_ALIGN_PARAGRAPH.CENTER)
-        self._set_cell_text(actual_table.cell(2, 2), f"{personal_actual}\n\n{status}", align=WD_ALIGN_PARAGRAPH.CENTER, size=10)
+        self._set_cell_text(actual_table.cell(2, 2),
+                            f"{personal_actual}\n\n{status}",
+                            align=WD_ALIGN_PARAGRAPH.CENTER, size=10)
 
         details = self._extract_heading_body(answer, "2. 세부내용")
         lessons = self._extract_heading_body(answer, "3. 배운점")
+        detail_cell = activity.cell(2, 0)
+        detail_cell.vertical_alignment = WD_ALIGN_VERTICAL.TOP
 
         if details:
-            doc.add_paragraph()
-            heading = doc.add_paragraph()
-            run = heading.add_run("2. 세부내용")
-            run.bold = True
-            run.font.name = "NanumGothic"
-            run.font.size = Pt(12)
-            self._add_report_paragraphs(doc, details)
+            self._add_cell_paragraph(detail_cell, "2. 세부내용", bold=True, size=12,
+                                     color_rgb=RGBColor(0xC0, 0x00, 0x00))
+            self._add_report_paragraphs(detail_cell, details)
 
         if lessons:
-            doc.add_paragraph()
-            heading = doc.add_paragraph()
-            run = heading.add_run("3. 배운점")
-            run.bold = True
-            run.font.name = "NanumGothic"
-            run.font.size = Pt(12)
-            self._add_report_paragraphs(doc, lessons)
+            self._add_cell_paragraph(detail_cell, "")
+            self._add_cell_paragraph(detail_cell, "3. 배운점", bold=True, size=12,
+                                     color_rgb=RGBColor(0xC0, 0x00, 0x00))
+            self._add_report_paragraphs(detail_cell, lessons)
+
+        self._append_related_images(detail_cell, self._collect_result_images(report_data), doc=doc)
 
         output_file = Path(output_path)
         output_file.parent.mkdir(parents=True, exist_ok=True)
@@ -360,7 +634,7 @@ class DocumentGenerator:
 
     def generate_word_report(self, report_data: Dict[str, Any], output_path: str):
         """Pandoc 하이브리드 방식 우선, 실패 시 python-docx 기본 방식으로 폴백"""
-        if self._is_weekly_activity_report(report_data):
+        if report_data.get("use_template") or self._is_weekly_activity_report(report_data):
             print("🧾 주차별 활동 보고서 전용 양식으로 생성")
             self._generate_weekly_word_template(report_data, output_path)
             return
@@ -493,7 +767,7 @@ class DocumentGenerator:
                     run.font.color.rgb = RGBColor(70, 70, 70)
 
                     for img in relevant_images:
-                        img_path = img.get('path')
+                        img_path = img.get('path') or img.get('url')
                         if img_path:
                             caption = self._shorten_image_caption(img.get('description')) if img.get('description') else "이미지"
                             if img.get('source'):
@@ -546,6 +820,10 @@ class DocumentGenerator:
         title: str = "보고서",
         author: str = "Unknown",
         created_date: str = None,
+        student_id: str = None,
+        department: str = None,
+        team_name: str = None,
+        images: List[Dict[str, Any]] = None,
     ):
         """마크다운 텍스트를 Word/PDF 파일로 변환"""
         if created_date is None:
@@ -560,11 +838,15 @@ class DocumentGenerator:
                 "title": title,
                 "answer": markdown_text,
                 "success": True,
-                "images": [],
+                "images": images or [],
                 "date_filter": None,
             }],
             "author": author,
             "created_date": created_date,
+            "student_id": student_id,
+            "department": department,
+            "team_name": team_name,
+            "use_template": True,
         }
 
         if output_path.endswith(".pdf"):

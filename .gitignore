@@ -7,3 +7,4 @@ qdrant_data/
 .claude/settings.local.json
 output/
 .DS_Store
+data/
