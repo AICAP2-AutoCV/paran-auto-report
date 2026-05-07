@@ -102,6 +102,70 @@ class DocumentGenerator:
                     return images
         return images
 
+    def _add_activity_photo_table(self, doc, images: List[Dict[str, Any]]):
+        """활동 사진을 원본 양식처럼 2열 그리드 별도 표로 추가."""
+        if not images:
+            return
+
+        builder = WordDocBuilder(doc, self.image_base_dir)
+        valid = []
+        for img in images:
+            ref = img.get("path") or img.get("url")
+            caption = self._shorten_image_caption(
+                img.get("description") or img.get("caption") or
+                img.get("section_title") or img.get("page_title") or "", 60
+            )
+            full_path = builder._resolve_image_path(ref)
+            if full_path and full_path.exists():
+                valid.append((full_path, caption))
+
+        if not valid:
+            return
+
+        photo_table = doc.add_table(rows=1, cols=2)
+        photo_table.autofit = False
+        self._style_all_table_cells(photo_table)
+        self._set_col_widths_dxa(photo_table, [5384, 5103])
+
+        header_row = photo_table.rows[0]
+        self._set_row_height(header_row, 426)
+        merged = photo_table.cell(0, 0).merge(photo_table.cell(0, 1))
+        self._set_cell_text(merged, "활동 사진", bold=True,
+                            align=WD_ALIGN_PARAGRAPH.CENTER, fill="D9E3F0", size=11)
+
+        col_widths_cm = [9.1, 8.6]
+
+        for i in range(0, len(valid), 2):
+            pair = valid[i:i + 2]
+
+            img_row_idx = len(photo_table.rows)
+            photo_table.add_row()
+            self._set_row_height(photo_table.rows[img_row_idx], 3530)
+
+            cap_row_idx = len(photo_table.rows)
+            photo_table.add_row()
+            self._set_row_height(photo_table.rows[cap_row_idx], 1117)
+
+            for col, (full_path, caption) in enumerate(pair):
+                img_cell = photo_table.cell(img_row_idx, col)
+                self._set_cell_border(img_cell)
+                self._set_cell_margin(img_cell)
+                img_cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+                para = img_cell.paragraphs[0]
+                para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                para.paragraph_format.space_before = Pt(0)
+                para.paragraph_format.space_after = Pt(0)
+                try:
+                    para.add_run().add_picture(str(full_path), width=Cm(col_widths_cm[col]))
+                except Exception as e:
+                    print(f"⚠️ 이미지 삽입 실패: {full_path}, 오류: {e}")
+                    run = para.add_run(f"[이미지: {caption}]")
+                    run.font.size = Pt(10)
+                    run.font.italic = True
+
+                self._set_cell_text(photo_table.cell(cap_row_idx, col), caption,
+                                    size=10, align=WD_ALIGN_PARAGRAPH.CENTER)
+
     def _append_related_images(self, target, images: List[Dict[str, Any]], doc=None, max_width: float = 13.5):
         if not images:
             return
@@ -585,26 +649,31 @@ class DocumentGenerator:
                             align=WD_ALIGN_PARAGRAPH.CENTER, fill="D9D9D9")
 
         team_actual = self._table_col_value(actual_rows, "팀", 2)
-        team_hours = self._table_col_value(actual_rows, "팀", 1, default="")
         team_status = self._table_col_value(actual_rows, "팀", 3, default="")
         personal_actual = self._table_col_value(actual_rows, "개인", 2)
         hours = "확인 필요"
         status = "확인 필요"
         for row in actual_rows[1:]:
             if row and row[0].strip() == "개인":
-                if len(row) > 1 and row[1].strip():
-                    hours = row[1].strip()
-                if len(row) > 3 and row[3].strip():
-                    status = row[3].strip()
-        team_parts = [team_actual]
-        if team_hours:
-            team_parts.append(f"투입시간: {team_hours}")
-        if team_status:
-            team_parts.append(f"목표달성 여부: {team_status}")
-        self._set_cell_text(actual_table.cell(2, 0), "\n\n".join(team_parts), size=10)
+                raw_hours = row[1].strip() if len(row) > 1 else ""
+                if raw_hours and raw_hours not in ("-", "확인 필요"):
+                    hours = raw_hours
+                raw_status = row[3].strip() if len(row) > 3 else ""
+                if raw_status and raw_status != "확인 필요":
+                    status = raw_status
+                break
+
+        # 팀 목표달성 여부가 있고 개인 데이터가 없으면 팀 값으로 보완
+        if status == "확인 필요" and team_status and team_status != "확인 필요":
+            status = team_status
+
+        team_text = team_actual
+        self._set_cell_text(actual_table.cell(2, 0), team_text, size=10)
         self._set_cell_text(actual_table.cell(2, 1), hours, align=WD_ALIGN_PARAGRAPH.CENTER)
+        personal_parts = [p for p in [personal_actual, status] if p and p != "확인 필요"]
+        personal_cell_text = "\n\n".join(personal_parts) if personal_parts else "확인 필요"
         self._set_cell_text(actual_table.cell(2, 2),
-                            f"{personal_actual}\n\n{status}",
+                            personal_cell_text,
                             align=WD_ALIGN_PARAGRAPH.CENTER, size=10)
 
         details = self._extract_heading_body(answer, "2. 세부내용")
@@ -623,7 +692,8 @@ class DocumentGenerator:
                                      color_rgb=RGBColor(0xC0, 0x00, 0x00))
             self._add_report_paragraphs(detail_cell, lessons)
 
-        self._append_related_images(detail_cell, self._collect_result_images(report_data), doc=doc)
+        self._add_tight_spacer(doc)
+        self._add_activity_photo_table(doc, self._collect_result_images(report_data))
 
         output_file = Path(output_path)
         output_file.parent.mkdir(parents=True, exist_ok=True)
