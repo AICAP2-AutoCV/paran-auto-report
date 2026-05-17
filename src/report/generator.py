@@ -66,11 +66,13 @@ REPORT_PROMPT = ChatPromptTemplate.from_messages([
 ### 나. 실제 활동내용 및 목표달성 여부
 - 팀의 투입시간은 반드시 '-'로 표시하고, 개인의 투입시간만 컨텍스트에서 찾아 숫자로 작성하세요.
 - 투입시간(시간 수)과 목표달성 여부(달성/부분 달성/미달성)가 컨텍스트에 있으면 반드시 개인 행에 작성하세요.
+- 사용자 역할이 제공된 경우, 컨텍스트에서 해당 역할과 관련된 활동을 찾아 개인 행에 구체적으로 작성하세요.
+- 역할 관련 활동이 컨텍스트에 있으면 반드시 "확인 필요" 대신 실제 내용을 채우세요.
 
 | 구분 | 투입시간 | 실제 활동내용 | 목표달성 여부 |
 |---|---:|---|---|
 | 팀 | - | 실제 수행한 팀 활동 (역할별 활동 포함) | 달성/부분 달성/미달성 |
-| 개인 | 확인된 경우만 작성 (예: 5시간) | 실제 수행한 개인 활동 요약 | 달성/부분 달성/미달성 |
+| 개인 | 확인된 경우만 작성 (예: 5시간) | 사용자 역할에 맞는 개인 활동 요약 | 달성/부분 달성/미달성 |
 
 ## 2. 세부내용
 원문 근거가 있는 활동을 중심으로 소제목을 나누어 구체적으로 작성합니다. 단순 요약이 아니라 무엇을 했고, 왜 했고, 어떤 의미가 있는지 보고서 문장으로 설명합니다.
@@ -83,7 +85,7 @@ REPORT_PROMPT = ChatPromptTemplate.from_messages([
 - 정보가 부족한 칸은 억지로 채우지 말고 "확인 필요"라고 쓰세요.
 - 표는 위 형식을 유지하되, 내용이 많으면 줄바꿈 대신 문장형 요약으로 작성하세요.
 - 제목 태그 [TITLE]...[/TITLE]는 반드시 첫 줄에 한 번만 작성하세요."""),
-    ("human", """{date_range_info}주제: {topic}
+    ("human", """{role_info}{date_range_info}주제: {topic}
 
 [계획서 - 도전과제 추진일정]
 {plan_context}
@@ -92,7 +94,8 @@ REPORT_PROMPT = ChatPromptTemplate.from_messages([
 {context}
 
 위 내용을 바탕으로 보고서를 작성해주세요.
-"가. 최초 계획" 표는 반드시 [계획서 - 도전과제 추진일정]에서 보고 기간에 해당하는 주차 내용을 찾아 작성하세요."""),
+"가. 최초 계획" 표는 반드시 [계획서 - 도전과제 추진일정]에서 보고 기간에 해당하는 주차 내용을 찾아 작성하세요.
+{role_instruction}"""),
 ])
 
 PROMPTS_DIR = Path(__file__).parent.parent.parent / "prompts" / "department_report"
@@ -217,6 +220,21 @@ def _build_date_range_info(since: Optional[datetime], until: Optional[datetime])
     return ""
 
 
+def _build_role_info(role: Optional[str]) -> str:
+    if role:
+        return f"사용자 역할: {role}\n"
+    return ""
+
+
+def _build_role_instruction(role: Optional[str]) -> str:
+    if role:
+        return (
+            f'\n"나. 실제 활동내용 및 목표달성 여부" 표의 개인 행은 사용자 역할({role})을 기준으로 작성하세요. '
+            f"컨텍스트에서 {role} 관련 활동을 찾아 투입시간, 활동내용, 목표달성 여부를 최대한 구체적으로 채우세요."
+        )
+    return ""
+
+
 def get_langfuse_handler(
     session_id: Optional[str] = None,
     user_id: Optional[str] = None,
@@ -248,6 +266,7 @@ def generate_report(
     session_id: Optional[str] = None,
     user_id: Optional[str] = None,
     trace_id: Optional[str] = None,
+    role: Optional[str] = None,
 ) -> str:
     vs = load_vectorstore()
     handler = get_langfuse_handler(session_id=session_id, user_id=user_id, trace_id=trace_id)
@@ -264,7 +283,14 @@ def generate_report(
 
     chain = REPORT_PROMPT | _make_llm() | StrOutputParser()
     result = chain.invoke(
-        {"topic": topic, "context": context, "date_range_info": date_range_info, "plan_context": plan_context},
+        {
+            "topic": topic,
+            "context": context,
+            "date_range_info": date_range_info,
+            "plan_context": plan_context,
+            "role_info": _build_role_info(role),
+            "role_instruction": _build_role_instruction(role),
+        },
         config={"callbacks": [handler]},
     )
     _langfuse.flush()
@@ -281,6 +307,7 @@ def generate_report_with_images(
     user_id: Optional[str] = None,
     trace_id: Optional[str] = None,
     max_images: int = 4,
+    role: Optional[str] = None,
 ) -> dict:
     """보고서 본문과 검색 문맥에서 나온 관련 이미지를 함께 반환."""
     vs = load_vectorstore()
@@ -299,7 +326,14 @@ def generate_report_with_images(
 
     chain = REPORT_PROMPT | _make_llm() | StrOutputParser()
     report = chain.invoke(
-        {"topic": topic, "context": context, "date_range_info": date_range_info, "plan_context": plan_context},
+        {
+            "topic": topic,
+            "context": context,
+            "date_range_info": date_range_info,
+            "plan_context": plan_context,
+            "role_info": _build_role_info(role),
+            "role_instruction": _build_role_instruction(role),
+        },
         config={"callbacks": [handler]},
     )
     _langfuse.flush()
@@ -315,6 +349,7 @@ def generate_report_stream(
     session_id: Optional[str] = None,
     user_id: Optional[str] = None,
     trace_id: Optional[str] = None,
+    role: Optional[str] = None,
 ):
     """스트리밍 버전 - 토큰 단위로 yield"""
     vs = load_vectorstore()
@@ -332,7 +367,14 @@ def generate_report_stream(
 
     chain = REPORT_PROMPT | _make_llm() | StrOutputParser()
     for chunk in chain.stream(
-        {"topic": topic, "context": context, "date_range_info": date_range_info, "plan_context": plan_context},
+        {
+            "topic": topic,
+            "context": context,
+            "date_range_info": date_range_info,
+            "plan_context": plan_context,
+            "role_info": _build_role_info(role),
+            "role_instruction": _build_role_instruction(role),
+        },
         config={"callbacks": [handler]},
     ):
         yield chunk

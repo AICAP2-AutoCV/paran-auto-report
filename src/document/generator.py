@@ -523,6 +523,7 @@ class DocumentGenerator:
         title = extracted_title or title
         created_date = report_data.get('created_date', datetime.now().strftime("%Y-%m-%d"))
         author = report_data.get('author', 'Unknown')
+        role = report_data.get('role')
 
         basic = {}
         plan_rows = []
@@ -671,7 +672,12 @@ class DocumentGenerator:
         self._set_cell_text(actual_table.cell(2, 0), team_text, size=10)
         self._set_cell_text(actual_table.cell(2, 1), hours, align=WD_ALIGN_PARAGRAPH.CENTER)
         personal_parts = [p for p in [personal_actual, status] if p and p != "확인 필요"]
-        personal_cell_text = "\n\n".join(personal_parts) if personal_parts else "확인 필요"
+        if personal_parts:
+            personal_cell_text = "\n\n".join(personal_parts)
+        elif role:
+            personal_cell_text = f"[{role}] 활동 내용 확인 필요"
+        else:
+            personal_cell_text = "확인 필요"
         self._set_cell_text(actual_table.cell(2, 2),
                             personal_cell_text,
                             align=WD_ALIGN_PARAGRAPH.CENTER, size=10)
@@ -893,6 +899,7 @@ class DocumentGenerator:
         student_id: str = None,
         department: str = None,
         team_name: str = None,
+        role: str = None,
         images: List[Dict[str, Any]] = None,
     ):
         """마크다운 텍스트를 Word/PDF 파일로 변환"""
@@ -916,6 +923,7 @@ class DocumentGenerator:
             "student_id": student_id,
             "department": department,
             "team_name": team_name,
+            "role": role,
             "use_template": True,
         }
 

@@ -24,6 +24,7 @@ from .report import (
     last_n_days,
     regenerate_for_department_stream,
     this_week,
+    add_glossary_to_report,
 )
 
 app = FastAPI(title="Paran Auto Report API", version="1.0.0")
@@ -51,6 +52,14 @@ class GenerateRequest(BaseModel):
     until: Optional[str] = None       # YYYY-MM-DD
     session_id: Optional[str] = None
     user_id: Optional[str] = None
+    include_glossary: bool = False
+    role: Optional[str] = None        # 사용자 역할 (예: "백엔드 개발", "ML 모델링")
+
+
+class GlossaryRequest(BaseModel):
+    markdown: str
+    session_id: Optional[str] = None
+    user_id: Optional[str] = None
 
 
 class RegenerateRequest(BaseModel):
@@ -69,6 +78,7 @@ class ExportRequest(BaseModel):
     student_id: Optional[str] = None
     department: Optional[str] = None
     team_name: Optional[str] = None
+    role: Optional[str] = None        # 사용자 역할
     images: List[Dict[str, Any]] = Field(default_factory=list)
 
 
@@ -111,6 +121,19 @@ def _sse(generator):
     yield "data: [DONE]\n\n"
 
 
+def _stream_with_glossary(generator, session_id: Optional[str], user_id: Optional[str], trace_id: str):
+    """보고서 스트림 완료 후 용어 해설 섹션을 추가로 yield."""
+    accumulated: list[str] = []
+    for chunk in generator:
+        accumulated.append(chunk)
+        yield chunk
+    full_report = "".join(accumulated)
+    enriched, _ = add_glossary_to_report(full_report, session_id=session_id, user_id=user_id, trace_id=trace_id)
+    suffix = enriched[len(full_report):]
+    if suffix:
+        yield suffix
+
+
 _SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
 
 
@@ -149,7 +172,10 @@ def generate_report_endpoint(req: GenerateRequest):
         session_id=session_id,
         user_id=req.user_id,
         trace_id=trace_id,
+        role=req.role,
     )
+    if req.include_glossary:
+        generator = _stream_with_glossary(generator, session_id=session_id, user_id=req.user_id, trace_id=trace_id)
     headers = {**_SSE_HEADERS, "X-Trace-ID": trace_id}
     return StreamingResponse(_sse(generator), media_type="text/event-stream", headers=headers)
 
@@ -170,7 +196,16 @@ def generate_report_full_endpoint(req: GenerateRequest):
         session_id=session_id,
         user_id=req.user_id,
         trace_id=trace_id,
+        role=req.role,
     )
+    if req.include_glossary:
+        enriched, terms = add_glossary_to_report(
+            payload["report"],
+            session_id=session_id,
+            user_id=req.user_id,
+            trace_id=trace_id,
+        )
+        payload = {**payload, "report": enriched, "glossary_terms": terms}
     return {**payload, "trace_id": trace_id}
 
 
@@ -202,6 +237,33 @@ def regenerate_report_endpoint(req: RegenerateRequest):
     return StreamingResponse(_sse(generator), media_type="text/event-stream", headers=headers)
 
 
+@app.post("/report/glossary")
+def add_glossary_endpoint(req: GlossaryRequest):
+    """기존 보고서 마크다운에 용어 강조 및 해설 섹션을 추가하여 반환.
+
+    Request body:
+      markdown   : 보고서 마크다운 텍스트
+      session_id : (선택) Langfuse 세션 ID
+      user_id    : (선택) 사용자 ID
+
+    Response:
+      markdown        : 용어 강조 + 해설 섹션이 추가된 마크다운
+      glossary_terms  : 추출된 용어 목록 [{term, explanation}, ...]
+    """
+    session_id = req.session_id or f"api-glossary-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    trace_id = uuid.uuid4().hex
+    try:
+        enriched, terms = add_glossary_to_report(
+            req.markdown,
+            session_id=session_id,
+            user_id=req.user_id,
+            trace_id=trace_id,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"용어 해설 생성 실패: {e}")
+    return {"markdown": enriched, "glossary_terms": terms, "trace_id": trace_id}
+
+
 @app.post("/document/export")
 def export_document(req: ExportRequest):
     """
@@ -230,6 +292,7 @@ def export_document(req: ExportRequest):
             student_id=req.student_id,
             department=req.department,
             team_name=req.team_name,
+            role=req.role,
             images=req.images,
         )
     except Exception as e:
