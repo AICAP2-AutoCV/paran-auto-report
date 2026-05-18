@@ -35,6 +35,13 @@ REPORT_PROMPT = ChatPromptTemplate.from_messages([
 
 제공된 컨텍스트를 바탕으로 학교 제출용 보고서처럼 명확한 형식으로 작성하세요. 문체는 간결한 보고서체를 사용합니다.
 
+[사용자 고정 정보 - 절대 변경 금지]
+아래 값은 사용자가 직접 입력한 확정 정보입니다. 컨텍스트와 무관하게 반드시 그대로 사용하고 절대 "확인 필요"로 바꾸지 마세요.
+- 팀명: {team_name}
+- 학과: {department}
+- 학번: {student_id}
+- 성명: {name}
+
 반드시 다음 구조를 따르세요:
 
 [TITLE]주차별 활동 보고서[/TITLE]
@@ -43,10 +50,10 @@ REPORT_PROMPT = ChatPromptTemplate.from_messages([
 | 항목 | 내용 |
 |---|---|
 | 제출일자 | 확인 필요 |
-| 팀명 | 확인 필요 |
-| 학과 | 확인 필요 |
-| 학번 | 확인 필요 |
-| 성명 | 확인 필요 |
+| 팀명 | {team_name} |
+| 학과 | {department} |
+| 학번 | {student_id} |
+| 성명 | {name} |
 | 도전과제명 | 사용자가 요청한 주제 |
 | 보고 기간 | 확인된 경우만 작성 |
 
@@ -57,22 +64,26 @@ REPORT_PROMPT = ChatPromptTemplate.from_messages([
 ### 가. 최초 계획
 - [계획서 - 도전과제 추진일정]에 주차별 계획 표가 있으면, 보고 기간에 해당하는 주차의 팀/개인 계획을 그대로 사용하세요.
 - 해당 정보가 없으면 "확인 필요"로 작성하세요.
+- 계획 내용은 반드시 번호 목록 형식으로 작성하세요. 각 항목은 `<br>`로 구분합니다. 예: `1. 첫 번째 계획<br>2. 두 번째 계획`
+- 계획 항목을 쉼표로 나열하지 말고, 반드시 번호를 붙여 한 줄씩 작성하세요.
 
 | 구분 | 계획 내용 |
 |---|---|
-| 팀 | 해당 주차 팀 계획 |
-| 개인 | 해당 주차 개인 계획 |
+| 팀 | 1. 첫 번째 팀 계획<br>2. 두 번째 팀 계획 |
+| 개인 | 1. 첫 번째 개인 계획<br>2. 두 번째 개인 계획 |
 
 ### 나. 실제 활동내용 및 목표달성 여부
 - 팀의 투입시간은 반드시 '-'로 표시하고, 개인의 투입시간만 컨텍스트에서 찾아 숫자로 작성하세요.
 - 투입시간(시간 수)과 목표달성 여부(달성/부분 달성/미달성)가 컨텍스트에 있으면 반드시 개인 행에 작성하세요.
 - 사용자 역할이 제공된 경우, 컨텍스트에서 해당 역할과 관련된 활동을 찾아 개인 행에 구체적으로 작성하세요.
 - 역할 관련 활동이 컨텍스트에 있으면 반드시 "확인 필요" 대신 실제 내용을 채우세요.
+- 실제 활동내용은 반드시 번호 목록 형식으로 작성하세요. 각 항목은 `<br>`로 구분합니다. 예: `1. 첫 번째 활동 내용<br>2. 두 번째 활동 내용<br>3. 세 번째 활동 내용`
+- 활동 항목은 쉼표로 나열하지 말고, 반드시 번호를 붙여 한 줄씩 작성하세요.
 
 | 구분 | 투입시간 | 실제 활동내용 | 목표달성 여부 |
 |---|---:|---|---|
-| 팀 | - | 실제 수행한 팀 활동 (역할별 활동 포함) | 달성/부분 달성/미달성 |
-| 개인 | 확인된 경우만 작성 (예: 5시간) | 사용자 역할에 맞는 개인 활동 요약 | 달성/부분 달성/미달성 |
+| 팀 | - | 1. 첫 번째 팀 활동<br>2. 두 번째 팀 활동<br>3. 세 번째 팀 활동 | 달성/부분 달성/미달성 |
+| 개인 | 확인된 경우만 작성 (예: 5시간) | 1. 첫 번째 개인 활동<br>2. 두 번째 개인 활동 | 달성/부분 달성/미달성 |
 
 ## 2. 세부내용
 원문 근거가 있는 활동을 중심으로 소제목을 나누어 구체적으로 작성합니다. 단순 요약이 아니라 무엇을 했고, 왜 했고, 어떤 의미가 있는지 보고서 문장으로 설명합니다.
@@ -83,7 +94,7 @@ REPORT_PROMPT = ChatPromptTemplate.from_messages([
 작성 규칙:
 - 컨텍스트에 없는 사실, 수치, 성과, 실험 결과, 기관명은 만들지 마세요.
 - 정보가 부족한 칸은 억지로 채우지 말고 "확인 필요"라고 쓰세요.
-- 표는 위 형식을 유지하되, 내용이 많으면 줄바꿈 대신 문장형 요약으로 작성하세요.
+- 표는 위 형식을 유지하되, 실제 활동내용 칸은 반드시 번호 목록(`<br>` 구분)으로 작성하세요.
 - 제목 태그 [TITLE]...[/TITLE]는 반드시 첫 줄에 한 번만 작성하세요."""),
     ("human", """{role_info}{date_range_info}주제: {topic}
 
@@ -226,11 +237,19 @@ def _build_role_info(role: Optional[str]) -> str:
     return ""
 
 
+def _build_user_field(value: Optional[str], fallback: str = "확인 필요") -> str:
+    return value.strip() if value and value.strip() else fallback
+
+
 def _build_role_instruction(role: Optional[str]) -> str:
     if role:
         return (
-            f'\n"나. 실제 활동내용 및 목표달성 여부" 표의 개인 행은 사용자 역할({role})을 기준으로 작성하세요. '
-            f"컨텍스트에서 {role} 관련 활동을 찾아 투입시간, 활동내용, 목표달성 여부를 최대한 구체적으로 채우세요."
+            f'\n"나. 실제 활동내용 및 목표달성 여부" 표의 개인 행은 반드시 채워야 합니다. '
+            f'사용자 역할은 "{role}"입니다. '
+            f"컨텍스트에서 이 역할과 직접 관련된 활동을 찾아 작성하세요. "
+            f"직접적인 언급이 없더라도 팀 활동 내용을 바탕으로 {role} 역할을 맡은 사람이 "
+            f"수행했을 구체적인 활동을 추론해 작성하세요. "
+            f'개인 행의 실제 활동내용에 "확인 필요"는 절대 사용하지 마세요.'
         )
     return ""
 
@@ -308,6 +327,10 @@ def generate_report_with_images(
     trace_id: Optional[str] = None,
     max_images: int = 4,
     role: Optional[str] = None,
+    team_name: Optional[str] = None,
+    student_id: Optional[str] = None,
+    department: Optional[str] = None,
+    name: Optional[str] = None,
 ) -> dict:
     """보고서 본문과 검색 문맥에서 나온 관련 이미지를 함께 반환."""
     vs = load_vectorstore()
@@ -333,6 +356,10 @@ def generate_report_with_images(
             "plan_context": plan_context,
             "role_info": _build_role_info(role),
             "role_instruction": _build_role_instruction(role),
+            "team_name": _build_user_field(team_name),
+            "student_id": _build_user_field(student_id),
+            "department": _build_user_field(department),
+            "name": _build_user_field(name),
         },
         config={"callbacks": [handler]},
     )
@@ -350,6 +377,10 @@ def generate_report_stream(
     user_id: Optional[str] = None,
     trace_id: Optional[str] = None,
     role: Optional[str] = None,
+    team_name: Optional[str] = None,
+    student_id: Optional[str] = None,
+    department: Optional[str] = None,
+    name: Optional[str] = None,
 ):
     """스트리밍 버전 - 토큰 단위로 yield"""
     vs = load_vectorstore()
@@ -374,6 +405,10 @@ def generate_report_stream(
             "plan_context": plan_context,
             "role_info": _build_role_info(role),
             "role_instruction": _build_role_instruction(role),
+            "team_name": _build_user_field(team_name),
+            "student_id": _build_user_field(student_id),
+            "department": _build_user_field(department),
+            "name": _build_user_field(name),
         },
         config={"callbacks": [handler]},
     ):

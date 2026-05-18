@@ -8,3 +8,4 @@ from .generator import (
     this_week,
 )
 from .department import list_departments, load_department_template, build_full_department_context
+from .glossary import add_glossary_to_report

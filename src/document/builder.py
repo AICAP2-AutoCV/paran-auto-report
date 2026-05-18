@@ -126,29 +126,48 @@ class WordDocBuilder:
         self.doc.add_paragraph()
 
     def add_inline_formatting(self, paragraph, text: str):
-        """인라인 마크다운(볼드, 이탤릭) → Word run"""
-        pattern = r'(\*\*\*|___|__|\*\*|_|\*)(.*?)\1'
+        """인라인 마크다운(볼드, 이탤릭) + HTML span → Word run"""
+        combined = r'(<span\b[^>]*>.*?</span>)|(\*\*\*|___|__|\*\*|_|\*)(.*?)\2'
         last_pos = 0
 
-        for match in re.finditer(pattern, text):
+        for match in re.finditer(combined, text, flags=re.DOTALL | re.IGNORECASE):
             if match.start() > last_pos:
                 run = paragraph.add_run(text[last_pos:match.start()])
                 run.font.size = Pt(11)
                 run.font.name = 'NanumGothic'
 
-            marker = match.group(1)
-            content = match.group(2)
-            run = paragraph.add_run(content)
-            run.font.size = Pt(11)
-            run.font.name = 'NanumGothic'
-
-            if marker in ['***', '___']:
-                run.bold = True
-                run.italic = True
-            elif marker in ['**', '__']:
-                run.bold = True
-            elif marker in ['*', '_']:
-                run.italic = True
+            if match.group(1):
+                span_tag = match.group(1)
+                inner = re.sub(r'<[^>]+>', '', span_tag)
+                style = re.search(r'style=["\']([^"\']*)["\']', span_tag)
+                run = paragraph.add_run(inner)
+                run.font.size = Pt(11)
+                run.font.name = 'NanumGothic'
+                if style:
+                    style_str = style.group(1)
+                    color_m = re.search(r'color\s*:\s*(#[0-9a-fA-F]{6})', style_str)
+                    if color_m:
+                        hex_color = color_m.group(1).lstrip('#')
+                        run.font.color.rgb = RGBColor(
+                            int(hex_color[0:2], 16),
+                            int(hex_color[2:4], 16),
+                            int(hex_color[4:6], 16),
+                        )
+                    if 'bold' in style_str:
+                        run.bold = True
+            else:
+                marker = match.group(2)
+                content = match.group(3)
+                run = paragraph.add_run(content)
+                run.font.size = Pt(11)
+                run.font.name = 'NanumGothic'
+                if marker in ['***', '___']:
+                    run.bold = True
+                    run.italic = True
+                elif marker in ['**', '__']:
+                    run.bold = True
+                elif marker in ['*', '_']:
+                    run.italic = True
 
             last_pos = match.end()
 

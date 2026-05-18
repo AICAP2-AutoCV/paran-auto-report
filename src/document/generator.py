@@ -233,13 +233,17 @@ class DocumentGenerator:
     def _table_value(self, rows: List[List[str]], row_key: str, default: str = "확인 필요") -> str:
         for row in rows[1:]:
             if row and row[0].strip() == row_key:
-                return row[-1].strip() or default
+                val = row[-1].strip() or default
+                val = re.sub(r'\s*<br\s*/?>\s*', '\n', val, flags=re.IGNORECASE)
+                return val
         return default
 
     def _table_col_value(self, rows: List[List[str]], row_key: str, col_idx: int, default: str = "확인 필요") -> str:
         for row in rows[1:]:
             if row and row[0].strip() == row_key and len(row) > col_idx:
-                return row[col_idx].strip() or default
+                val = row[col_idx].strip() or default
+                val = re.sub(r'\s*<br\s*/?>\s*', '\n', val, flags=re.IGNORECASE)
+                return val
         return default
 
     def _extract_heading_body(self, text: str, heading: str) -> str:
@@ -349,7 +353,7 @@ class DocumentGenerator:
             self._shade_cell(cell, fill)
         self._set_cell_border(cell)
         self._set_cell_margin(cell)
-        lines = str(text or "").splitlines() or [""]
+        lines = self._plain_markdown_text(str(text or "")).splitlines() or [""]
         paragraph = cell.paragraphs[0]
         paragraph.alignment = align
         paragraph.paragraph_format.space_before = Pt(0)
@@ -498,6 +502,39 @@ class DocumentGenerator:
         run.font.size = Pt(size_pt)
         return para
 
+    def _add_inline_text(self, paragraph, text: str, size: float = 10.5):
+        """span 색상을 Word run으로 변환하여 paragraph에 추가."""
+        pattern = r'(<span\b[^>]*>.*?</span>)'
+        last_pos = 0
+        for match in re.finditer(pattern, text, flags=re.DOTALL | re.IGNORECASE):
+            if match.start() > last_pos:
+                run = paragraph.add_run(text[last_pos:match.start()])
+                run.font.name = "NanumGothic"
+                run.font.size = Pt(size)
+            span_tag = match.group(1)
+            inner = re.sub(r'<[^>]+>', '', span_tag)
+            run = paragraph.add_run(inner)
+            run.font.name = "NanumGothic"
+            run.font.size = Pt(size)
+            style = re.search(r'style=["\']([^"\']*)["\']', span_tag)
+            if style:
+                style_str = style.group(1)
+                color_m = re.search(r'color\s*:\s*(#[0-9a-fA-F]{6})', style_str)
+                if color_m:
+                    hex_color = color_m.group(1).lstrip('#')
+                    run.font.color.rgb = RGBColor(
+                        int(hex_color[0:2], 16),
+                        int(hex_color[2:4], 16),
+                        int(hex_color[4:6], 16),
+                    )
+                if 'bold' in style_str:
+                    run.bold = True
+            last_pos = match.end()
+        if last_pos < len(text):
+            run = paragraph.add_run(text[last_pos:])
+            run.font.name = "NanumGothic"
+            run.font.size = Pt(size)
+
     def _add_report_paragraphs(self, doc, text: str):
         cleaned = re.sub(r'^\s*[-*]\s+', '', text, flags=re.MULTILINE).strip()
         if not cleaned:
@@ -509,9 +546,63 @@ class DocumentGenerator:
             para = doc.add_paragraph()
             para.paragraph_format.space_after = Pt(6)
             para.paragraph_format.line_spacing = 1.35
-            run = para.add_run(block.replace('\n', ' '))
-            run.font.name = "NanumGothic"
-            run.font.size = Pt(10.5)
+            self._add_inline_text(para, self._plain_markdown_text(block).replace('\n', ' ')
+                                  if '<span' not in block
+                                  else block.replace('\n', ' '))
+
+    def _plain_markdown_text(self, text: str) -> str:
+        """Word 양식 셀에 넣기 전 간단한 마크다운/HTML 강조 표식을 제거."""
+        text = re.sub(r'<span\b[^>]*>(.*?)</span>', r'\1', str(text or ""), flags=re.IGNORECASE | re.DOTALL)
+        text = re.sub(r'</?[^>]+>', '', text)
+        text = re.sub(r'(\*\*|__)(.*?)\1', r'\2', text)
+        return text.strip()
+
+    def _extract_glossary_rows(self, answer: str) -> List[List[str]]:
+        """마크다운의 '용어 해설' 섹션에서 [용어, 설명] 행을 추출."""
+        match = re.search(r'^#{1,6}\s*(?:📚\s*)?용어\s*해설\s*$', answer, flags=re.MULTILINE)
+        if not match:
+            return []
+
+        glossary_text = answer[match.end():]
+        for table_text in extract_tables_from_markdown(glossary_text):
+            rows = parse_markdown_table(table_text)
+            if not rows:
+                continue
+            header = " ".join(rows[0])
+            if "용어" in header and "설명" in header:
+                return [
+                    [self._plain_markdown_text(row[0]), self._plain_markdown_text(row[1])]
+                    for row in rows[1:]
+                    if len(row) >= 2 and row[0].strip()
+                ]
+        return []
+
+    def _add_glossary_table(self, doc, rows: List[List[str]]):
+        if not rows:
+            return
+
+        self._add_tight_spacer(doc)
+        title = doc.add_paragraph()
+        title.paragraph_format.space_before = Pt(4)
+        title.paragraph_format.space_after = Pt(6)
+        run = title.add_run("용어 해설")
+        run.bold = True
+        run.font.name = "NanumGothic"
+        run.font.size = Pt(12)
+
+        table = doc.add_table(rows=len(rows) + 1, cols=2)
+        table.autofit = False
+        self._style_all_table_cells(table)
+        self._set_col_widths_dxa(table, [2400, 8066])
+        self._set_cell_text(table.cell(0, 0), "용어", bold=True,
+                            align=WD_ALIGN_PARAGRAPH.CENTER, fill="D9E3F0", size=10)
+        self._set_cell_text(table.cell(0, 1), "설명", bold=True,
+                            align=WD_ALIGN_PARAGRAPH.CENTER, fill="D9E3F0", size=10)
+
+        for idx, row in enumerate(rows, start=1):
+            self._set_cell_text(table.cell(idx, 0), row[0], bold=True,
+                                align=WD_ALIGN_PARAGRAPH.CENTER, size=10)
+            self._set_cell_text(table.cell(idx, 1), row[1], size=10)
 
     def _generate_weekly_word_template(self, report_data: Dict[str, Any], output_path: str):
         """학교 제출용 주차별 활동 보고서 — 외부 표 1개 + 중첩 표 구조."""
@@ -652,7 +743,7 @@ class DocumentGenerator:
         team_actual = self._table_col_value(actual_rows, "팀", 2)
         team_status = self._table_col_value(actual_rows, "팀", 3, default="")
         personal_actual = self._table_col_value(actual_rows, "개인", 2)
-        hours = "확인 필요"
+        hours = "10"
         status = "확인 필요"
         for row in actual_rows[1:]:
             if row and row[0].strip() == "개인":
@@ -700,6 +791,7 @@ class DocumentGenerator:
 
         self._add_tight_spacer(doc)
         self._add_activity_photo_table(doc, self._collect_result_images(report_data))
+        self._add_glossary_table(doc, self._extract_glossary_rows(answer))
 
         output_file = Path(output_path)
         output_file.parent.mkdir(parents=True, exist_ok=True)
@@ -924,7 +1016,6 @@ class DocumentGenerator:
             "department": department,
             "team_name": team_name,
             "role": role,
-            "use_template": True,
         }
 
         if output_path.endswith(".pdf"):

@@ -54,6 +54,10 @@ class GenerateRequest(BaseModel):
     user_id: Optional[str] = None
     include_glossary: bool = False
     role: Optional[str] = None        # 사용자 역할 (예: "백엔드 개발", "ML 모델링")
+    team_name: Optional[str] = None   # 팀명
+    student_id: Optional[str] = None  # 학번
+    department: Optional[str] = None  # 학과
+    name: Optional[str] = None        # 성명
 
 
 class GlossaryRequest(BaseModel):
@@ -173,6 +177,10 @@ def generate_report_endpoint(req: GenerateRequest):
         user_id=req.user_id,
         trace_id=trace_id,
         role=req.role,
+        team_name=req.team_name,
+        student_id=req.student_id,
+        department=req.department,
+        name=req.name,
     )
     if req.include_glossary:
         generator = _stream_with_glossary(generator, session_id=session_id, user_id=req.user_id, trace_id=trace_id)
@@ -197,6 +205,10 @@ def generate_report_full_endpoint(req: GenerateRequest):
         user_id=req.user_id,
         trace_id=trace_id,
         role=req.role,
+        team_name=req.team_name,
+        student_id=req.student_id,
+        department=req.department,
+        name=req.name,
     )
     if req.include_glossary:
         enriched, terms = add_glossary_to_report(
@@ -312,6 +324,48 @@ def export_document(req: ExportRequest):
         filename=filename,
         background=BackgroundTask(os.unlink, tmp_path),
     )
+
+
+@app.post("/document/preview")
+def preview_document(req: ExportRequest):
+    """
+    마크다운을 Word로 변환 후 pandoc으로 HTML 변환하여 미리보기용 HTML 반환.
+    """
+    import subprocess
+    from fastapi.responses import HTMLResponse
+
+    fd, tmp_docx = tempfile.mkstemp(suffix=".docx")
+    os.close(fd)
+    try:
+        gen = DocumentGenerator()
+        gen.generate_from_markdown(
+            markdown_text=req.markdown,
+            output_path=tmp_docx,
+            title=req.title,
+            author=req.author,
+            student_id=req.student_id,
+            department=req.department,
+            team_name=req.team_name,
+            role=req.role,
+            images=req.images,
+        )
+        result = subprocess.run(
+            ["pandoc", tmp_docx, "-f", "docx", "-t", "html5", "--standalone",
+             "--metadata", "charset=utf-8"],
+            capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode != 0:
+            raise HTTPException(status_code=500, detail=f"HTML 변환 실패: {result.stderr[:200]}")
+        html = result.stdout
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"미리보기 생성 실패: {e}")
+    finally:
+        if os.path.exists(tmp_docx):
+            os.unlink(tmp_docx)
+
+    return HTMLResponse(content=html)
 
 
 @app.post("/feedback", response_model=FeedbackResponse)
