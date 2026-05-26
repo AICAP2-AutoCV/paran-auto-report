@@ -8,3 +8,6 @@ qdrant_data/
 output/
 .DS_Store
 data/
+주차별 보고서_실제보고서/
+results/
+eval_config.yaml

@@ -74,7 +74,7 @@ def update_qdrant_dates(page_dates: dict[str, str]) -> int:
         point_ids = [p.id for p in points]
         qdrant.set_payload(
             collection_name=QDRANT_COLLECTION,
-            payload={"metadata": {"prop_날짜": date_str}},
+            payload={"metadata.prop_날짜": date_str},
             points=point_ids,
         )
         updated += len(point_ids)
