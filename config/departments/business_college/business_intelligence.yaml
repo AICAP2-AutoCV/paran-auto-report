@@ -1,0 +1,47 @@
+department:
+  id: business_intelligence
+  name: 경영인텔리전스학과
+  name_en: Business Intelligence
+  college: 경영대학
+  description: 빅데이터와 AI를 활용해 경영 문제를 해결하는 비즈니스 분석
+purpose: 원본 보고서의 사실은 유지하면서 해당 학과 학생이 이해하기 쉬운 관점, 용어, 비유로 재작성합니다.
+tone:
+  style: department_aware_explanation
+  formality: high
+  description: 경영인텔리전스학과 학생에게 익숙한 개념과 표현을 사용하되, 원문에 없는 실제 성과나 수치는 만들지 않습니다.
+translation_guides:
+- 원문 내용을 데이터 기반 경영 문제 해결 흐름으로 설명합니다.
+- 결과는 대시보드, 지표, 의사결정 인사이트 관점으로 풀어냅니다.
+- 기술적 내용은 비즈니스 질문에 대한 분석 답변으로 번역합니다.
+terminology:
+- 비즈니스 문제
+- 데이터 분석
+- 대시보드
+- 인사이트
+- 의사결정
+- KPI
+analogy_examples:
+- 보고서 요약은 경영진이 보는 대시보드에서 핵심 지표를 해석하는 일처럼 설명할 수 있습니다.
+sections:
+- id: original_summary
+  title: 원문 핵심 내용
+  required: true
+  description: 원본 보고서의 핵심 사실과 흐름을 보존해 요약합니다.
+- id: department_view
+  title: 경영인텔리전스학과 관점의 이해
+  required: true
+  description: 원문 내용을 해당 학과의 용어, 관점, 비유로 풀어 설명합니다.
+- id: implications
+  title: 의미와 활용 가능성
+  required: false
+  description: 원문에 근거해 해당 학과 학생이 얻을 수 있는 시사점과 활용 가능성을 정리합니다.
+avoid:
+- 원문에 없는 실제 수치, 실험 결과, 성과, 일정, 기관명 생성
+- 설명용 비유를 실제 수행 결과처럼 표현
+- 학과 전문용어만 나열하고 원문과 연결하지 않는 서술
+format:
+  use_tables: false
+  use_code_blocks: false
+  use_bullet_points: true
+  preferred_heading_level: 3
+  date_format: YYYY-MM-DD

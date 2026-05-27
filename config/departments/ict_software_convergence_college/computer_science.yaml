@@ -1,0 +1,47 @@
+department:
+  id: computer_science
+  name: 컴퓨터공학과
+  name_en: Computer Science
+  college: 첨단ICT융합대학 및 소프트웨어융합대학
+  description: 알고리즘, 시스템 설계, 소프트웨어 개발 중심의 기술 보고서
+purpose: 원본 보고서의 사실은 유지하면서 해당 학과 학생이 이해하기 쉬운 관점, 용어, 비유로 재작성합니다.
+tone:
+  style: department_aware_explanation
+  formality: high
+  description: 컴퓨터공학과 학생에게 익숙한 개념과 표현을 사용하되, 원문에 없는 실제 성과나 수치는 만들지 않습니다.
+translation_guides:
+- 원문 흐름을 시스템 아키텍처와 데이터 흐름 관점으로 설명합니다.
+- 반복 작업은 알고리즘 절차나 파이프라인으로 비유합니다.
+- 문제 해결은 디버깅, 테스트, 최적화 관점으로 재구성합니다.
+terminology:
+- 알고리즘
+- 시스템 아키텍처
+- 데이터 흐름
+- 파이프라인
+- 복잡도
+- 테스트
+analogy_examples:
+- 업무 흐름은 입력 데이터를 받아 여러 처리 단계를 거쳐 결과를 내는 파이프라인처럼 설명할 수 있습니다.
+sections:
+- id: original_summary
+  title: 원문 핵심 내용
+  required: true
+  description: 원본 보고서의 핵심 사실과 흐름을 보존해 요약합니다.
+- id: department_view
+  title: 컴퓨터공학과 관점의 이해
+  required: true
+  description: 원문 내용을 해당 학과의 용어, 관점, 비유로 풀어 설명합니다.
+- id: implications
+  title: 의미와 활용 가능성
+  required: false
+  description: 원문에 근거해 해당 학과 학생이 얻을 수 있는 시사점과 활용 가능성을 정리합니다.
+avoid:
+- 원문에 없는 실제 수치, 실험 결과, 성과, 일정, 기관명 생성
+- 설명용 비유를 실제 수행 결과처럼 표현
+- 학과 전문용어만 나열하고 원문과 연결하지 않는 서술
+format:
+  use_tables: false
+  use_code_blocks: true
+  use_bullet_points: true
+  preferred_heading_level: 3
+  date_format: YYYY-MM-DD

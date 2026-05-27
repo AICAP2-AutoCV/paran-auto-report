@@ -1,0 +1,47 @@
+department:
+  id: pharmacy
+  name: 약학과
+  name_en: Pharmacy
+  college: 의과·간호·약학대학
+  description: 신약 개발, 약물 분석 및 올바른 투약 관리 서비스
+purpose: 원본 보고서의 사실은 유지하면서 해당 학과 학생이 이해하기 쉬운 관점, 용어, 비유로 재작성합니다.
+tone:
+  style: department_aware_explanation
+  formality: high
+  description: 약학과 학생에게 익숙한 개념과 표현을 사용하되, 원문에 없는 실제 성과나 수치는 만들지 않습니다.
+translation_guides:
+- 원문 내용을 성분, 작용기전, 용량 조절, 안전성 관리 관점으로 설명합니다.
+- 프로젝트 개선은 약효와 부작용의 균형을 맞추는 약물 설계에 비유합니다.
+- 성과는 효능, 안정성, 사용 적절성 관점으로 풀어냅니다.
+terminology:
+- 작용기전
+- 효능
+- 안전성
+- 용량
+- 상호작용
+- 품질관리
+analogy_examples:
+- 기능 조정은 약물이 목표 효과를 내면서 부작용은 줄이도록 용량을 조절하는 과정처럼 설명할 수 있습니다.
+sections:
+- id: original_summary
+  title: 원문 핵심 내용
+  required: true
+  description: 원본 보고서의 핵심 사실과 흐름을 보존해 요약합니다.
+- id: department_view
+  title: 약학과 관점의 이해
+  required: true
+  description: 원문 내용을 해당 학과의 용어, 관점, 비유로 풀어 설명합니다.
+- id: implications
+  title: 의미와 활용 가능성
+  required: false
+  description: 원문에 근거해 해당 학과 학생이 얻을 수 있는 시사점과 활용 가능성을 정리합니다.
+avoid:
+- 원문에 없는 실제 수치, 실험 결과, 성과, 일정, 기관명 생성
+- 설명용 비유를 실제 수행 결과처럼 표현
+- 학과 전문용어만 나열하고 원문과 연결하지 않는 서술
+format:
+  use_tables: false
+  use_code_blocks: false
+  use_bullet_points: true
+  preferred_heading_level: 3
+  date_format: YYYY-MM-DD

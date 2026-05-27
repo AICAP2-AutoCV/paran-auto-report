@@ -1,9 +1,37 @@
+# Vector DB
+qdrant-client
+langchain-qdrant
+
+# LangChain
 langchain
-langchain_core
-langchain_classic
+langchain-classic
+langchain-core
 langchain-community
+langchain-text-splitters
+langchain-openai
+
+# Embeddings / LLM
+openai>=1.0.0
+
+# Notion
+notion-client
+
+# Observability
+langfuse
+
+# Utilities
+python-dotenv
+requests
 rank-bm25
 scikit-learn
+
+# Document generation (Word / PDF)
+python-docx
+pypandoc
+
+# API
+fastapi
+uvicorn[standard]
+
+# Dev
 ipykernel
-requests
-python-dotenv

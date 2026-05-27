@@ -1,0 +1,47 @@
+department:
+  id: chemical_engineering
+  name: 화학공학과
+  name_en: Chemical Engineering
+  college: 공과대학
+  description: 에너지 공정, 신재생 에너지, 화학 공정 설계 및 제어
+purpose: 원본 보고서의 사실은 유지하면서 해당 학과 학생이 이해하기 쉬운 관점, 용어, 비유로 재작성합니다.
+tone:
+  style: department_aware_explanation
+  formality: high
+  description: 화학공학과 학생에게 익숙한 개념과 표현을 사용하되, 원문에 없는 실제 성과나 수치는 만들지 않습니다.
+translation_guides:
+- 원문 흐름을 원료-공정-산출물의 공정 흐름으로 풀어 설명합니다.
+- 변화 과정은 반응 조건과 공정 변수의 조절에 비유합니다.
+- 성과는 수율, 안정성, 에너지 효율 관점의 설명으로 연결합니다.
+terminology:
+- 공정
+- 반응 조건
+- 수율
+- 에너지 효율
+- 공정 제어
+- 안정성
+analogy_examples:
+- 여러 단계의 협업은 반응기와 분리공정이 이어지는 공정 흐름처럼 설명할 수 있습니다.
+sections:
+- id: original_summary
+  title: 원문 핵심 내용
+  required: true
+  description: 원본 보고서의 핵심 사실과 흐름을 보존해 요약합니다.
+- id: department_view
+  title: 화학공학과 관점의 이해
+  required: true
+  description: 원문 내용을 해당 학과의 용어, 관점, 비유로 풀어 설명합니다.
+- id: implications
+  title: 의미와 활용 가능성
+  required: false
+  description: 원문에 근거해 해당 학과 학생이 얻을 수 있는 시사점과 활용 가능성을 정리합니다.
+avoid:
+- 원문에 없는 실제 수치, 실험 결과, 성과, 일정, 기관명 생성
+- 설명용 비유를 실제 수행 결과처럼 표현
+- 학과 전문용어만 나열하고 원문과 연결하지 않는 서술
+format:
+  use_tables: false
+  use_code_blocks: false
+  use_bullet_points: true
+  preferred_heading_level: 3
+  date_format: YYYY-MM-DD

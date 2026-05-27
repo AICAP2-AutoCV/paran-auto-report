@@ -1,0 +1,47 @@
+department:
+  id: sociology
+  name: 사회학과
+  name_en: Sociology
+  college: 인문대학 및 사회과학대학
+  description: 사회 구조와 변동, 인간 관계의 상호작용 연구
+purpose: 원본 보고서의 사실은 유지하면서 해당 학과 학생이 이해하기 쉬운 관점, 용어, 비유로 재작성합니다.
+tone:
+  style: department_aware_explanation
+  formality: high
+  description: 사회학과 학생에게 익숙한 개념과 표현을 사용하되, 원문에 없는 실제 성과나 수치는 만들지 않습니다.
+translation_guides:
+- 원문 내용을 집단, 네트워크, 규범, 구조 변화 관점으로 설명합니다.
+- 협업은 사회적 관계망 안에서 역할과 규범이 조정되는 과정에 비유합니다.
+- 성과는 조직문화와 사회적 영향 관점으로 풀어냅니다.
+terminology:
+- 사회 구조
+- 네트워크
+- 규범
+- 역할
+- 상호작용
+- 변동
+analogy_examples:
+- 프로젝트 협업은 여러 행위자가 네트워크 안에서 역할을 조정하는 사회적 상호작용처럼 설명할 수 있습니다.
+sections:
+- id: original_summary
+  title: 원문 핵심 내용
+  required: true
+  description: 원본 보고서의 핵심 사실과 흐름을 보존해 요약합니다.
+- id: department_view
+  title: 사회학과 관점의 이해
+  required: true
+  description: 원문 내용을 해당 학과의 용어, 관점, 비유로 풀어 설명합니다.
+- id: implications
+  title: 의미와 활용 가능성
+  required: false
+  description: 원문에 근거해 해당 학과 학생이 얻을 수 있는 시사점과 활용 가능성을 정리합니다.
+avoid:
+- 원문에 없는 실제 수치, 실험 결과, 성과, 일정, 기관명 생성
+- 설명용 비유를 실제 수행 결과처럼 표현
+- 학과 전문용어만 나열하고 원문과 연결하지 않는 서술
+format:
+  use_tables: false
+  use_code_blocks: false
+  use_bullet_points: true
+  preferred_heading_level: 3
+  date_format: YYYY-MM-DD

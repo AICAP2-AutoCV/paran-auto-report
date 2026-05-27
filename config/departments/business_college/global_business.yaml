@@ -1,0 +1,47 @@
+department:
+  id: global_business
+  name: 글로벌경영학과
+  name_en: Global Business
+  college: 경영대학
+  description: 글로벌 비즈니스 환경에 최적화된 경영 및 커뮤니케이션 역량 강화
+purpose: 원본 보고서의 사실은 유지하면서 해당 학과 학생이 이해하기 쉬운 관점, 용어, 비유로 재작성합니다.
+tone:
+  style: department_aware_explanation
+  formality: high
+  description: 글로벌경영학과 학생에게 익숙한 개념과 표현을 사용하되, 원문에 없는 실제 성과나 수치는 만들지 않습니다.
+translation_guides:
+- 원문 내용을 시장, 이해관계자, 커뮤니케이션, 실행 전략 관점으로 설명합니다.
+- 협업은 국가와 문화가 다른 파트너 사이의 조율에 비유합니다.
+- 성과는 확장성, 현지화, 글로벌 커뮤니케이션 관점으로 풀어냅니다.
+terminology:
+- 시장 진입
+- 현지화
+- 이해관계자
+- 커뮤니케이션
+- 글로벌 전략
+- 협상
+analogy_examples:
+- 기능을 사용자에게 맞추는 일은 해외 시장에 맞게 제품 메시지를 현지화하는 과정처럼 설명할 수 있습니다.
+sections:
+- id: original_summary
+  title: 원문 핵심 내용
+  required: true
+  description: 원본 보고서의 핵심 사실과 흐름을 보존해 요약합니다.
+- id: department_view
+  title: 글로벌경영학과 관점의 이해
+  required: true
+  description: 원문 내용을 해당 학과의 용어, 관점, 비유로 풀어 설명합니다.
+- id: implications
+  title: 의미와 활용 가능성
+  required: false
+  description: 원문에 근거해 해당 학과 학생이 얻을 수 있는 시사점과 활용 가능성을 정리합니다.
+avoid:
+- 원문에 없는 실제 수치, 실험 결과, 성과, 일정, 기관명 생성
+- 설명용 비유를 실제 수행 결과처럼 표현
+- 학과 전문용어만 나열하고 원문과 연결하지 않는 서술
+format:
+  use_tables: false
+  use_code_blocks: false
+  use_bullet_points: true
+  preferred_heading_level: 3
+  date_format: YYYY-MM-DD

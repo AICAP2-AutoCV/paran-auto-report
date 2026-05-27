@@ -1,0 +1,47 @@
+department:
+  id: electronic_engineering
+  name: 전자공학과
+  name_en: Electronic Engineering
+  college: 첨단ICT융합대학 및 소프트웨어융합대학
+  description: 반도체, 통신, 신호처리 등 현대 IT 기술의 근간
+purpose: 원본 보고서의 사실은 유지하면서 해당 학과 학생이 이해하기 쉬운 관점, 용어, 비유로 재작성합니다.
+tone:
+  style: department_aware_explanation
+  formality: high
+  description: 전자공학과 학생에게 익숙한 개념과 표현을 사용하되, 원문에 없는 실제 성과나 수치는 만들지 않습니다.
+translation_guides:
+- 원문 흐름을 신호의 입력, 처리, 출력 과정으로 설명합니다.
+- 시스템 구성은 회로 블록이나 통신 모듈의 연결로 비유합니다.
+- 성과는 안정성, 정확성, 처리 효율 관점으로 풀어냅니다.
+terminology:
+- 신호
+- 회로
+- 모듈
+- 통신
+- 반도체
+- 처리 효율
+analogy_examples:
+- 정보 전달 과정은 노이즈를 줄이며 신호를 복원하는 통신 시스템처럼 설명할 수 있습니다.
+sections:
+- id: original_summary
+  title: 원문 핵심 내용
+  required: true
+  description: 원본 보고서의 핵심 사실과 흐름을 보존해 요약합니다.
+- id: department_view
+  title: 전자공학과 관점의 이해
+  required: true
+  description: 원문 내용을 해당 학과의 용어, 관점, 비유로 풀어 설명합니다.
+- id: implications
+  title: 의미와 활용 가능성
+  required: false
+  description: 원문에 근거해 해당 학과 학생이 얻을 수 있는 시사점과 활용 가능성을 정리합니다.
+avoid:
+- 원문에 없는 실제 수치, 실험 결과, 성과, 일정, 기관명 생성
+- 설명용 비유를 실제 수행 결과처럼 표현
+- 학과 전문용어만 나열하고 원문과 연결하지 않는 서술
+format:
+  use_tables: false
+  use_code_blocks: false
+  use_bullet_points: true
+  preferred_heading_level: 3
+  date_format: YYYY-MM-DD

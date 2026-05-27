@@ -1,1 +1,13 @@
 .env
+.venv/
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+qdrant_data/
+.claude/settings.local.json
+output/
+.DS_Store
+data/
+주차별 보고서_실제보고서/
+results/
+eval_config.yaml
