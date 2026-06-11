@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 
-from .report.department import list_departments
+from .report.department import list_departments, load_department_template
 from .document import DocumentGenerator
 from .langfuse_feedback import save_feedback
 from .report import (
@@ -233,17 +233,21 @@ def regenerate_report_endpoint(req: RegenerateRequest):
     session_id = req.session_id or f"api-regen-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
     trace_id = uuid.uuid4().hex
 
+    # regenerate_for_department_stream 은 제너레이터 함수이므로 body가 lazy 실행됨.
+    # FileNotFoundError 를 스트리밍 전에 잡으려면 템플릿을 여기서 미리 검증해야 함.
     try:
-        generator = regenerate_for_department_stream(
-            original_report=req.original_report,
-            department_id=req.department_id,
-            report_date=req.report_date,
-            session_id=session_id,
-            user_id=req.user_id,
-            trace_id=trace_id,
-        )
+        load_department_template(req.department_id)
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+    generator = regenerate_for_department_stream(
+        original_report=req.original_report,
+        department_id=req.department_id,
+        report_date=req.report_date,
+        session_id=session_id,
+        user_id=req.user_id,
+        trace_id=trace_id,
+    )
 
     headers = {**_SSE_HEADERS, "X-Trace-ID": trace_id}
     return StreamingResponse(_sse(generator), media_type="text/event-stream", headers=headers)

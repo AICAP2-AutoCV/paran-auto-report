@@ -6,6 +6,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional, List
 
+from rank_bm25 import BM25Okapi
+
 from langchain_openai import ChatOpenAI
 from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate
@@ -223,6 +225,35 @@ def _fetch_plan_context(vs) -> str:
     return "\n\n".join(d.page_content for d in docs)
 
 
+def _rrf_search(
+    vs,
+    query: str,
+    k: int,
+    filter=None,
+    rrf_k: int = 60,
+) -> List[Document]:
+    """벡터 검색 + BM25 재순위 결과를 RRF로 결합해 상위 k개 반환."""
+    candidates = vs.similarity_search(query, k=k * 3, filter=filter)
+    if not candidates:
+        return []
+
+    tokenized = [doc.page_content.split() for doc in candidates]
+    bm25 = BM25Okapi(tokenized)
+    bm25_scores = bm25.get_scores(query.split())
+
+    bm25_rank = [0] * len(candidates)
+    for rank, idx in enumerate(sorted(range(len(bm25_scores)), key=lambda x: -bm25_scores[x])):
+        bm25_rank[idx] = rank
+
+    rrf_scores = [
+        1.0 / (rrf_k + vec_rank) + 1.0 / (rrf_k + bm25_rank[vec_rank])
+        for vec_rank in range(len(candidates))
+    ]
+
+    top_indices = sorted(range(len(rrf_scores)), key=lambda i: -rrf_scores[i])[:k]
+    return [candidates[i] for i in top_indices]
+
+
 def _build_date_range_info(since: Optional[datetime], until: Optional[datetime]) -> str:
     if since or until:
         since_str = since.strftime("%Y-%m-%d") if since else "처음"
@@ -294,7 +325,7 @@ def generate_report(
 
     qdrant_filter = _build_qdrant_filter(since, until)
     print(f"🔍 '{topic}' 관련 문서 검색 중 (k={k})...")
-    docs = vs.similarity_search(topic, k=k, filter=qdrant_filter)
+    docs = _rrf_search(vs, topic, k=k, filter=qdrant_filter)
     print(f"   검색 결과: {len(docs)}개 문서 사용")
 
     date_range_info = _build_date_range_info(since, until)
@@ -340,7 +371,7 @@ def generate_report_with_images(
 
     qdrant_filter = _build_qdrant_filter(since, until)
     print(f"🔍 '{topic}' 관련 문서/이미지 검색 중 (k={k})...")
-    docs = vs.similarity_search(topic, k=k, filter=qdrant_filter)
+    docs = _rrf_search(vs, topic, k=k, filter=qdrant_filter)
     print(f"   검색 결과: {len(docs)}개 문서 사용")
 
     date_range_info = _build_date_range_info(since, until)
@@ -390,7 +421,7 @@ def generate_report_stream(
 
     qdrant_filter = _build_qdrant_filter(since, until)
     print(f"🔍 '{topic}' 관련 문서 검색 중 (k={k})...")
-    docs = vs.similarity_search(topic, k=k, filter=qdrant_filter)
+    docs = _rrf_search(vs, topic, k=k, filter=qdrant_filter)
     print(f"   검색 결과: {len(docs)}개 문서 사용")
 
     date_range_info = _build_date_range_info(since, until)
