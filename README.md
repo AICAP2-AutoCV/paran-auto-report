@@ -2,8 +2,6 @@
 
 Notion 워크스페이스의 회의록과 계획서를 **RRF 하이브리드 검색(벡터 + BM25) + RAG**로 분석해 보고서를 자동 생성하는 서비스입니다.
 
-> 시스템 내부 동작 방식과 핵심 알고리즘 6가지는 [ARCHITECTURE.md](./ARCHITECTURE.md)를 참고하세요.
-
 ---
 
 ## 두 폴더의 역할
@@ -31,7 +29,7 @@ Notion 워크스페이스의 회의록과 계획서를 **RRF 하이브리드 검
 7. [API 서버 실행](#api-서버-실행)
 8. [FE(프론트엔드) 접속](#fe프론트엔드-접속)
 9. [자주 쓰는 명령어 모음](#자주-쓰는-명령어-모음)
-10. [테스트](#테스트)
+10. [RAG 평가 결과](#rag-평가-결과)
 11. [폴더 구조](#폴더-구조)
 
 ---
@@ -259,14 +257,83 @@ pip install -r requirements.txt
 
 ---
 
-## 테스트
+## RAG 평가 결과
 
-```bash
-# paran-auto-report/ 폴더 안에서 실행
-pytest tests/ -v
-```
+Retriever · Embedding · 생성 LLM 각각을 실제 보고서 기준으로 LLM judge가 1~5점으로 채점해 최적 조합을 선정했습니다.
 
-`tests/test_tc14_stability.py` — 잘못된 입력(빈 주제, 잘못된 날짜, 없는 학과 ID, Qdrant 미연결 등) 상황에서 서버 무중단 여부를 검증합니다. LLM 실제 호출 없이 실행되므로 API 비용이 거의 없습니다.
+| 항목 | 설명 | 5점 | 3점 | 1점 |
+|---|---|---|---|---|
+| **내용 일치도** | 실제 보고서와 같은 활동/사건을 다루는가 | 핵심 활동 모두 일치 | 절반 정도 일치 | 거의 다른 내용 |
+| **문체 유사도** | 간결한 보고서체 문장 스타일이 비슷한가 | 문체 거의 동일 | 보고서체이나 어조 차이 | 구어체 또는 완전히 다른 스타일 |
+| **정보 완성도** | "확인 필요" 없이 모든 섹션이 채워졌는가 | 모든 섹션 완성 | 일부 섹션 미완성 | 대부분 미완성 |
+
+> **형식 준수도는 랭킹 집계에서 제외** — 보고서 서식은 시스템에서 고정 제공하므로 모델 선정 기준으로 무의미.
+
+---
+
+### 1단계: Retriever 선정
+
+Judge: claude-opus-4-7, deepseek-v4-flash, gpt-5-5 / 평가 주차: 1~4주차
+
+| 순위 | Retriever | 내용 | 문체 | 완성 | **평균** |
+|:---:|---|:---:|:---:|:---:|:---:|
+| 1 | bm25 | 2.17 | 2.50 | 2.50 | **2.39** |
+| 2 | **rrf** | 2.08 | **2.67** | 2.33 | **2.36** |
+| 3 | dense | 1.92 | 2.58 | 2.42 | **2.31** |
+| 4 | rrf_multiquery | 1.92 | 2.50 | 2.17 | **2.20** |
+
+**선택: rrf** — bm25와 점수 차이 0.03으로 통계적 동점이나, 문체 유사도 1위(2.67)이고 BM25+Dense 앙상블이므로 bm25 장점을 이미 포함. rrf_multiquery는 LLM 쿼리 확장이 오히려 노이즈를 추가해 최하위.
+
+---
+
+### 2단계: Embedding 모델 선정
+
+LLM: gpt-4.1 고정 / Retriever: rrf (k=10) 고정
+
+| 순위 | Embedding | 내용 | 문체 | 완성 | **평균** |
+|:---:|---|:---:|:---:|:---:|:---:|
+| 1 | **openai/text-embedding-3-large** | **3.50** | **3.58** | 2.83 | **3.38** |
+| 2 | gemini-embedding-exp-03-07 | 2.33 | 3.08 | 2.58 | **2.88** |
+| 3 | qwen3-embedding-8b | 2.00 | 2.92 | 2.50 | **2.73** |
+
+**선택: openai/text-embedding-3-large** — 2위와 0.5점, 3위와 0.65점 차이로 명확한 우위. 내용 일치도 압도적 1위(3.50).
+
+---
+
+### 3단계: 생성 LLM 선정
+
+Embedding: text-embedding-3-large 고정 / Retriever: rrf (k=10) 고정
+
+> ⚠️ claude-opus-4-7, gpt-5-5, deepseek-v4-flash는 생성 LLM이자 judge — self-evaluation 편향 가능성 있음.
+
+| 순위 | LLM | 내용 | 문체 | 완성 | **평균** | 편향 |
+|:---:|---|:---:|:---:|:---:|:---:|:---:|
+| 1 | claude-opus-4-7 | 4.42 | 4.08 | 2.92 | **3.81** | ⚠️ |
+| 2 | **gemini-3-flash** | 4.00 | 3.50 | **3.17** | **3.65** | ✅ |
+| 3 | gpt-5-5 | 4.08 | 3.58 | 2.75 | **3.54** | ⚠️ |
+| 4 | gpt-5-mini | 2.83 | 2.92 | 2.17 | **2.90** | ✅ |
+| 5 | hy3-preview | 2.92 | 3.25 | 1.92 | **2.88** | ✅ |
+| 6 | deepseek-v4-flash | 2.83 | 2.92 | 1.92 | **2.77** | ⚠️ |
+
+상위 3개를 중립 judge(owl-alpha, hy3-preview, minimax-m2.7)로 재평가:
+
+| LLM | 편향 judge | 중립 judge | 순위 변동 |
+|---|:---:|:---:|:---:|
+| claude-opus-4-7 | 3.81 | 3.33 | 유지 (1위) |
+| gemini-3-flash | 3.65 | 3.25 | 유지 (2위) |
+| gpt-5-5 | 3.54 | 3.17 | 유지 (3위) |
+
+---
+
+### 4단계: 생성 속도 비교 (최종 후보 3개, 모델당 8회 측정)
+
+| 순위 | 모델 | 평균 | 중앙값 | 최솟값 | 최댓값 |
+|:---:|---|:---:|:---:|:---:|:---:|
+| 1 | **gemini-3-flash** | **8.2s** | 8.3s | 7.6s | 8.8s |
+| 2 | claude-opus-4-7 | 36.5s | 36.4s | 32.9s | 39.6s |
+| 3 | gpt-5-5 | 42.3s | 38.0s | 29.7s | 54.0s |
+
+**최종 선택: gemini-3-flash** — 완성도 judge 평가 1위(3.17), 속도 압도적 우위(claude 대비 4.5배, gpt-5-5 대비 5.2배). 비용·속도·완성도 모두 최적. claude-opus-4-7은 중립 judge 점수(3.33)에서 근소 우위이나 36초 응답 시간이 실사용에 부담.
 
 ---
 
@@ -277,7 +344,6 @@ paran-auto-report/          ← API 서버 (이 폴더)
 ├── .env                    ← 환경 변수 (직접 생성, .env.example 참고)
 ├── .env.example            ← 환경 변수 템플릿
 ├── requirements.txt
-├── ARCHITECTURE.md         ← 시스템 동작 방식 및 핵심 알고리즘 상세 설명
 ├── scripts/
 │   ├── build_vectordb.py   ← Vector DB 구축 스크립트
 │   ├── generate_report.py  ← CLI로 보고서 생성
@@ -290,8 +356,7 @@ paran-auto-report/          ← API 서버 (이 폴더)
 │   └── document/           ← Word / PDF 변환
 ├── config/departments/     ← 학과별 맞춤 재생성 YAML 설정
 ├── prompts/                ← 프롬프트 템플릿
-├── tests/                  ← 안정성 테스트 (pytest)
-├── experiments/            ← Retriever · Embedding · LLM 평가 스크립트 및 결과
+├── experiments/            ← Retriever · Embedding · LLM 평가 스크립트
 ├── qdrant_data/            ← Vector DB 데이터 (자동 생성, gitignore)
 └── data/                   ← 수집된 Notion 원문 캐시 (gitignore)
 
