@@ -536,6 +536,19 @@ class DocumentGenerator:
             run.font.size = Pt(size)
 
     def _add_report_paragraphs(self, doc, text: str):
+        # Strip heading markers and horizontal rules before processing
+        processed_lines = []
+        for line in text.split('\n'):
+            stripped = line.strip()
+            heading_match = re.match(r'^#{1,6}\s+(.+)$', stripped)
+            if heading_match:
+                processed_lines.append(heading_match.group(1))
+            elif re.match(r'^[-*_]{3,}$', stripped):
+                processed_lines.append('')
+            else:
+                processed_lines.append(line)
+        text = '\n'.join(processed_lines)
+
         cleaned = re.sub(r'^\s*[-*]\s+', '', text, flags=re.MULTILINE).strip()
         if not cleaned:
             return
@@ -546,9 +559,15 @@ class DocumentGenerator:
             para = doc.add_paragraph()
             para.paragraph_format.space_after = Pt(6)
             para.paragraph_format.line_spacing = 1.35
-            self._add_inline_text(para, self._plain_markdown_text(block).replace('\n', ' ')
-                                  if '<span' not in block
-                                  else block.replace('\n', ' '))
+            if '<span' not in block:
+                display_text = self._plain_markdown_text(block).replace('\n', ' ')
+            else:
+                # Strip bold/italic markers while preserving span tags for color rendering
+                display_text = re.sub(r'\*\*(.+?)\*\*', r'\1', block)
+                display_text = re.sub(r'__(.+?)__', r'\1', display_text)
+                display_text = re.sub(r'\*([^*\n]+?)\*', r'\1', display_text)
+                display_text = display_text.replace('\n', ' ')
+            self._add_inline_text(para, display_text)
 
     def _plain_markdown_text(self, text: str) -> str:
         """Word 양식 셀에 넣기 전 간단한 마크다운/HTML 강조 표식을 제거."""
@@ -963,8 +982,12 @@ class DocumentGenerator:
 
         try:
             output_dir = Path(output_path).parent
+            lo_bin = next(
+                (b for b in ['libreoffice', 'soffice'] if subprocess.run(['which', b], capture_output=True).returncode == 0),
+                'libreoffice',
+            )
             result = subprocess.run(
-                ['libreoffice', '--headless', '--convert-to', 'pdf', '--outdir', str(output_dir), temp_docx],
+                [lo_bin, '--headless', '--convert-to', 'pdf', '--outdir', str(output_dir), temp_docx],
                 capture_output=True, text=True,
             )
             if result.returncode == 0:

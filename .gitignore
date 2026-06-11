@@ -1,4 +1,5 @@
 .env
+!.env.example
 .venv/
 __pycache__/
 *.py[cod]
@@ -11,3 +12,4 @@ data/
 주차별 보고서_실제보고서/
 results/
 eval_config.yaml
+experiments/*.csv

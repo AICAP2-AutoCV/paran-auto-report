@@ -1,6 +1,8 @@
 # 파RAG학기 — Notion 기반 자동 보고서 생성기
 
-Notion 워크스페이스의 회의록과 계획서를 RAG(검색 증강 생성)로 분석해 보고서를 자동 생성하는 서비스입니다.
+Notion 워크스페이스의 회의록과 계획서를 **RRF 하이브리드 검색(벡터 + BM25) + RAG**로 분석해 보고서를 자동 생성하는 서비스입니다.
+
+> 시스템 내부 동작 방식과 핵심 알고리즘 6가지는 [ARCHITECTURE.md](./ARCHITECTURE.md)를 참고하세요.
 
 ---
 
@@ -29,7 +31,8 @@ Notion 워크스페이스의 회의록과 계획서를 RAG(검색 증강 생성)
 7. [API 서버 실행](#api-서버-실행)
 8. [FE(프론트엔드) 접속](#fe프론트엔드-접속)
 9. [자주 쓰는 명령어 모음](#자주-쓰는-명령어-모음)
-10. [폴더 구조](#폴더-구조)
+10. [테스트](#테스트)
+11. [폴더 구조](#폴더-구조)
 
 ---
 
@@ -74,6 +77,8 @@ paran-auto-report/              paran-auto-report-fe/
        └─── 브라우저: http://localhost:8000/ui
 ```
 
+보고서 생성 요청이 들어오면 **RRF 하이브리드 검색**(벡터 + BM25 재순위)으로 관련 청크를 찾고, LLM이 스트리밍으로 보고서를 작성합니다.
+
 ---
 
 ## 사전 준비
@@ -91,12 +96,17 @@ paran-auto-report/              paran-auto-report-fe/
 ## 설치
 
 ```bash
-# 1. 저장소 클론
-git clone <repo-url>
-cd paran-auto-report
+# 1. 저장소 클론 (두 폴더가 나란히 있어야 FE 서빙이 동작합니다)
+git clone https://github.com/AICAP2-AutoCV/paran-auto-report.git
+git clone https://github.com/AICAP2-AutoCV/paran-auto-report-fe.git
 
-# 2. 패키지 설치
-pip install -r requirements.txt
+# 2. 패키지 설치 (uv 권장)
+cd paran-auto-report
+uv venv && source .venv/bin/activate
+uv pip install -r requirements.txt
+
+# pip를 사용하는 경우
+# pip install -r requirements.txt
 ```
 
 ---
@@ -104,7 +114,13 @@ pip install -r requirements.txt
 ## 환경 변수 설정 (.env)
 
 프로젝트 루트(`paran-auto-report/`)에 `.env` 파일을 만들어야 합니다.  
-아래 내용을 복사해 붙여넣고 **필수** 항목을 채워주세요.
+`.env.example`을 복사해 시작하세요.
+
+```bash
+cp .env.example .env
+```
+
+아래 내용을 참고해 **필수** 항목을 채워주세요.
 
 ```dotenv
 # ─── 필수 ─────────────────────────────────────────────────────────────────────
@@ -243,22 +259,41 @@ pip install -r requirements.txt
 
 ---
 
+## 테스트
+
+```bash
+# paran-auto-report/ 폴더 안에서 실행
+pytest tests/ -v
+```
+
+`tests/test_tc14_stability.py` — 잘못된 입력(빈 주제, 잘못된 날짜, 없는 학과 ID, Qdrant 미연결 등) 상황에서 서버 무중단 여부를 검증합니다. LLM 실제 호출 없이 실행되므로 API 비용이 거의 없습니다.
+
+---
+
 ## 폴더 구조
 
 ```
 paran-auto-report/          ← API 서버 (이 폴더)
-├── .env                    ← 환경 변수 (직접 생성)
+├── .env                    ← 환경 변수 (직접 생성, .env.example 참고)
+├── .env.example            ← 환경 변수 템플릿
 ├── requirements.txt
+├── ARCHITECTURE.md         ← 시스템 동작 방식 및 핵심 알고리즘 상세 설명
 ├── scripts/
-│   └── build_vectordb.py   ← Vector DB 구축 스크립트
+│   ├── build_vectordb.py   ← Vector DB 구축 스크립트
+│   ├── generate_report.py  ← CLI로 보고서 생성
+│   └── setup-shell.sh      ← 쉘 환경 설정
 ├── src/
 │   ├── api.py              ← FastAPI 앱 진입점
 │   ├── config.py           ← 환경 변수 로드
-│   ├── ingestion/          ← Notion 수집 · 임베딩
-│   ├── report/             ← 보고서 생성 로직
+│   ├── ingestion/          ← Notion 수집 · 멀티모달 임베딩
+│   ├── report/             ← RRF 하이브리드 검색 + 보고서 생성
 │   └── document/           ← Word / PDF 변환
-├── qdrant_data/            ← Vector DB 데이터 (자동 생성)
-└── data/                   ← 수집된 Notion 원문 캐시
+├── config/departments/     ← 학과별 맞춤 재생성 YAML 설정
+├── prompts/                ← 프롬프트 템플릿
+├── tests/                  ← 안정성 테스트 (pytest)
+├── experiments/            ← Retriever · Embedding · LLM 평가 스크립트 및 결과
+├── qdrant_data/            ← Vector DB 데이터 (자동 생성, gitignore)
+└── data/                   ← 수집된 Notion 원문 캐시 (gitignore)
 
 paran-auto-report-fe/       ← 프론트엔드 (API 서버가 /ui로 서빙)
 ├── index.html
@@ -267,6 +302,6 @@ paran-auto-report-fe/       ← 프론트엔드 (API 서버가 /ui로 서빙)
     ├── state.js            ← API_BASE 등 전역 상태
     ├── api.js              ← fetch 래퍼
     ├── app.js              ← 메인 로직
-    ├── ui.js               ← 렌더링
+    ├── ui.js               ← 렌더링 · 동의 확인 모달
     └── profile.js          ← 사용자 정보 관리
 ```
